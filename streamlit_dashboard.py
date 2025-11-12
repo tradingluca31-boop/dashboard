@@ -104,9 +104,9 @@ def calculate_metrics(data):
     max_win = max([normalize_pnl(t['pnl']) for t in winning_trades], default=0)
     max_loss = min([normalize_pnl(t['pnl']) for t in losing_trades], default=0)
 
-    # Max RR (meilleur trade / perte moyenne)
-    # avg_loss dans le JSON est déjà positif (valeur absolue)
-    max_rr = max_win / avg_loss if avg_loss > 0 else 0
+    # Max RR (meilleur gain / pire perte) - Ratio Risk/Reward réel
+    # max_loss est négatif, donc on prend sa valeur absolue
+    max_rr = max_win / abs(max_loss) if max_loss < 0 else 0
 
     # ROI depuis JSON (déjà en %)
     roi = latest.get('roi_pct', 0)
