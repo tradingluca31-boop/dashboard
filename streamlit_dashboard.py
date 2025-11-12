@@ -306,31 +306,36 @@ def create_equity_curve(history):
     fig.update_layout(
         title={
             'text': "Courbe d'Équité - Balance Réalisée vs Equity Totale",
-            'font': {'size': 18, 'color': 'white'}
+            'font': {'size': 18, 'color': 'white'},
+            'y': 0.95,  # Position verticale du titre (plus bas pour laisser place à légende)
+            'x': 0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
         },
         xaxis_title="Timesteps",
         yaxis_title="Capital ($)",
         hovermode='closest',
         template='plotly_dark',
-        height=500,  # Augmenté pour faire de la place à l'annotation
+        height=550,  # Encore plus haut pour faire de la place
+        margin=dict(t=120, b=80),  # MARGES: top=120px, bottom=80px
         showlegend=True,
         legend=dict(
             yanchor="top",
-            y=1.25,  # ENCORE PLUS HAUT (était 1.15)
+            y=1.20,  # Légèrement réduit (était 1.25) pour ne pas dépasser
             xanchor="left",
-            x=0.01,  # Déjà à gauche
+            x=0.01,
             bgcolor='rgba(0,0,0,0.9)',
             bordercolor='white',
             borderwidth=2,
-            font=dict(size=12, color='white')
+            font=dict(size=11, color='white')
         ),
         annotations=[
             dict(
                 text=annotation_text,
                 xref="paper", yref="paper",
-                x=0.5, y=-0.22,  # PLUS BAS (était -0.15)
+                x=0.5, y=-0.18,  # REMONTÉ (était -0.22) grâce à margin bottom
                 showarrow=False,
-                font=dict(size=12, color='#CCCCCC', family='Arial'),  # GRIS CLAIR au lieu de jaune
+                font=dict(size=11, color='#AAAAAA', family='Arial'),  # GRIS MOYEN
                 xanchor='center',
                 align='center'
             )
@@ -369,15 +374,16 @@ def create_drawdown_chart(history):
         yaxis_title="Max DD (%)",
         hovermode='x unified',
         template='plotly_dark',
-        height=500,  # Augmenté pour faire de la place
+        height=550,  # Même hauteur que graphique equity
+        margin=dict(t=80, b=80),  # MARGES cohérentes
         showlegend=True,
         annotations=[
             dict(
                 text="<b>⚠️ DD = (Peak - Current) / Peak</b>, PAS depuis $100K initial",
                 xref="paper", yref="paper",
-                x=0.5, y=-0.20,  # PLUS BAS (était -0.12)
+                x=0.5, y=-0.18,  # REMONTÉ grâce à margin bottom
                 showarrow=False,
-                font=dict(size=11, color='#CCCCCC', family='Arial'),  # GRIS CLAIR au lieu de jaune
+                font=dict(size=11, color='#AAAAAA', family='Arial'),  # GRIS MOYEN
                 xanchor='center'
             )
         ]
