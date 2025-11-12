@@ -251,6 +251,11 @@ def create_equity_curve(history):
     balance = [h.get('balance', 100000) for h in sorted_history]
     equity = [h.get('equity', 100000) for h in sorted_history]
 
+    # Identifier les points où il y a une position ouverte (différence > $1)
+    has_position = [abs(e - b) > 1 for e, b in zip(equity, balance)]
+    positions_count = sum(has_position)
+    total_checkpoints = len(has_position)
+
     fig = go.Figure()
 
     # Balance (positions fermées) - TRACER EN PREMIER (dessous si superposition)
@@ -258,7 +263,7 @@ def create_equity_curve(history):
         x=timesteps,
         y=balance,
         mode='lines',
-        name='✅ Balance (Réalisé)',
+        name=f'✅ Balance (Réalisé)',
         line=dict(color='#FF1493', width=5, dash='solid'),  # ROSE FUSHIA - ÉPAIS
         hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Balance</b>: $%{y:,.2f}<br><i>(Positions fermées seulement)</i><extra></extra>',
         opacity=1.0
@@ -269,13 +274,34 @@ def create_equity_curve(history):
         x=timesteps,
         y=equity,
         mode='lines',
-        name='💰 Equity (Total)',
+        name=f'💰 Equity (Total) - {positions_count}/{total_checkpoints} checkpoints avec position',
         line=dict(color='#00FF00', width=2, dash='dash'),  # VERT FLUO - FIN et TIRETS
         hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Equity</b>: $%{y:,.2f}<br><i>(Balance + positions ouvertes)</i><extra></extra>',
         opacity=1.0
     ))
 
+    # NOUVEAU: Ajouter des marqueurs UNIQUEMENT sur les points avec position ouverte
+    position_timesteps = [t for t, has_pos in zip(timesteps, has_position) if has_pos]
+    position_equity = [e for e, has_pos in zip(equity, has_position) if has_pos]
+    position_balance = [b for b, has_pos in zip(balance, has_position) if has_pos]
+    position_diff = [e - b for e, b in zip(position_equity, position_balance)]
+
+    if position_timesteps:
+        fig.add_trace(go.Scatter(
+            x=position_timesteps,
+            y=position_equity,
+            mode='markers',
+            name=f'🔴 Position Ouverte ({len(position_timesteps)} points)',
+            marker=dict(color='red', size=8, symbol='circle'),
+            hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Equity</b>: $%{y:,.2f}<br><b>Unrealized PnL</b>: $%{customdata:,.2f}<extra></extra>',
+            customdata=position_diff,
+            opacity=0.8
+        ))
+
     fig.add_hline(y=100000, line_dash="dash", line_color="gray", annotation_text="Initial Capital ($100,000)", line_width=2)
+
+    # Annotation explicative
+    annotation_text = f"<i>🔴 Points rouges = Position ouverte ({positions_count}/{total_checkpoints} checkpoints, {positions_count/total_checkpoints*100:.1f}%)<br>Si lignes superposées = Pas de position à ce moment-là</i>"
 
     fig.update_layout(
         title={
@@ -297,7 +323,17 @@ def create_equity_curve(history):
             bordercolor='white',
             borderwidth=2,
             font=dict(size=13, color='white')
-        )
+        ),
+        annotations=[
+            dict(
+                text=annotation_text,
+                xref="paper", yref="paper",
+                x=0.5, y=-0.15,
+                showarrow=False,
+                font=dict(size=11, color='#FFD700'),
+                xanchor='center'
+            )
+        ]
     )
 
     return fig
@@ -636,6 +672,18 @@ with col4:
 
 # === SECTION 4: GRAPHIQUES ===
 st.header("📊 Graphiques")
+
+# Explication Balance vs Equity
+st.info("""
+📌 **Balance vs Equity - Explication:**
+- **Balance (Rose)** = Capital réalisé (positions fermées seulement)
+- **Equity (Vert)** = Balance + Unrealized PnL (positions ouvertes)
+- **Points rouges** = Checkpoints avec position ouverte
+- **Lignes superposées** = Pas de position ouverte à ce moment-là (normal!)
+
+⚠️ Votre agent ferme les positions rapidement, donc ~59% des checkpoints ont Balance = Equity.
+Les différences apparaissent sur les 41% de points avec positions flottantes (marqueurs rouges).
+""")
 
 # Ligne 1: Equity + Drawdown
 col1, col2 = st.columns(2)
