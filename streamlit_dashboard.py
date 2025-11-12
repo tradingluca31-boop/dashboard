@@ -168,35 +168,38 @@ def create_equity_curve(history):
 
     fig = go.Figure()
 
-    # Balance (positions fermées uniquement)
+    # Equity (avec positions flottantes) - VERT pour les gains
+    fig.add_trace(go.Scatter(
+        x=timesteps,
+        y=equity,
+        mode='lines+markers',
+        name='💰 Equity (Total + Flottant)',
+        line=dict(color='#00FF7F', width=3),  # Vert vif (Spring Green)
+        marker=dict(size=5, symbol='circle'),
+        hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Equity</b>: $%{y:,.2f}<br><i>(Inclut positions ouvertes)</i><extra></extra>'
+    ))
+
+    # Balance (positions fermées uniquement) - CYAN pour différencier
     fig.add_trace(go.Scatter(
         x=timesteps,
         y=balance,
         mode='lines+markers',
-        name='Balance (Réalisé)',
-        line=dict(color='#00D9FF', width=3),
-        marker=dict(size=4),
-        hovertemplate='<b>Timestep</b>: %{x}<br><b>Balance</b>: $%{y:,.2f}<extra></extra>'
-    ))
-
-    # Equity (avec positions flottantes) - ligne plus fine et transparente
-    fig.add_trace(go.Scatter(
-        x=timesteps,
-        y=equity,
-        mode='lines',
-        name='Equity (+ Flottant)',
-        line=dict(color='#FFA500', width=1, dash='dot'),
-        opacity=0.5,
-        hovertemplate='<b>Timestep</b>: %{x}<br><b>Equity</b>: $%{y:,.2f}<extra></extra>'
+        name='✅ Balance (Réalisé seulement)',
+        line=dict(color='#00D9FF', width=3),  # Cyan vif
+        marker=dict(size=5, symbol='diamond'),
+        hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Balance</b>: $%{y:,.2f}<br><i>(Positions fermées)</i><extra></extra>'
     ))
 
     fig.add_hline(y=100000, line_dash="dash", line_color="gray", annotation_text="Initial Capital ($100,000)", line_width=2)
 
     fig.update_layout(
-        title="Courbe d'Équité - Balance (Réalisé) vs Equity (+ Positions Flottantes)",
+        title={
+            'text': "Courbe d'Équité - Balance Réalisée vs Equity Totale",
+            'font': {'size': 18, 'color': 'white'}
+        },
         xaxis_title="Timesteps",
-        yaxis_title="Montant ($)",
-        hovermode='x unified',
+        yaxis_title="Capital ($)",
+        hovermode='closest',
         template='plotly_dark',
         height=450,
         showlegend=True,
@@ -204,7 +207,11 @@ def create_equity_curve(history):
             yanchor="top",
             y=0.99,
             xanchor="left",
-            x=0.01
+            x=0.01,
+            bgcolor='rgba(0,0,0,0.5)',
+            bordercolor='white',
+            borderwidth=1,
+            font=dict(size=12)
         )
     )
 
