@@ -159,19 +159,23 @@ def calculate_metrics(data):
 
 def create_equity_curve(history):
     """Crée la courbe d'équité"""
-    timesteps = [h.get('timesteps', 0) for h in history]
-    equity = [h.get('equity', 100000) for h in history]
+    # Trier les données par timesteps pour assurer une courbe propre
+    sorted_history = sorted(history, key=lambda h: h.get('timesteps', 0))
+
+    timesteps = [h.get('timesteps', 0) for h in sorted_history]
+    equity = [h.get('equity', 100000) for h in sorted_history]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=timesteps,
         y=equity,
-        mode='lines',
+        mode='lines+markers',
         name='Equity',
-        line=dict(color='#00D9FF', width=2)
+        line=dict(color='#00D9FF', width=3),
+        marker=dict(size=4)
     ))
 
-    fig.add_hline(y=100000, line_dash="dash", line_color="gray", annotation_text="Initial Capital")
+    fig.add_hline(y=100000, line_dash="dash", line_color="gray", annotation_text="Initial Capital", line_width=2)
 
     fig.update_layout(
         title="Courbe d'Équité",
@@ -179,28 +183,34 @@ def create_equity_curve(history):
         yaxis_title="Equity ($)",
         hovermode='x unified',
         template='plotly_dark',
-        height=400
+        height=450,
+        showlegend=True
     )
 
     return fig
 
 def create_drawdown_chart(history):
     """Crée le graphique de drawdown"""
-    timesteps = [h.get('timesteps', 0) for h in history]
+    # Trier les données par timesteps
+    sorted_history = sorted(history, key=lambda h: h.get('timesteps', 0))
+
+    timesteps = [h.get('timesteps', 0) for h in sorted_history]
     # max_drawdown_pct est déjà en pourcentage dans le JSON, NE PAS multiplier
-    dd_pct = [h.get('max_drawdown_pct', 0) for h in history]
+    dd_pct = [h.get('max_drawdown_pct', 0) for h in sorted_history]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=timesteps,
         y=dd_pct,
-        mode='lines',
+        mode='lines+markers',
         name='Max DD %',
-        line=dict(color='#FF6B6B', width=2),
-        fill='tozeroy'
+        line=dict(color='#FF6B6B', width=3),
+        marker=dict(size=4),
+        fill='tozeroy',
+        fillcolor='rgba(255, 107, 107, 0.2)'
     ))
 
-    fig.add_hline(y=10, line_dash="dash", line_color="red", annotation_text="FTMO Limit (10%)")
+    fig.add_hline(y=10, line_dash="dash", line_color="red", annotation_text="FTMO Limit (10%)", line_width=2)
 
     fig.update_layout(
         title="Maximum Drawdown",
@@ -208,36 +218,43 @@ def create_drawdown_chart(history):
         yaxis_title="Max DD (%)",
         hovermode='x unified',
         template='plotly_dark',
-        height=400
+        height=450,
+        showlegend=True
     )
 
     return fig
 
 def create_sharpe_chart(history):
     """Crée le graphique du Sharpe Ratio"""
-    timesteps = [h.get('timesteps', 0) for h in history]
+    # Trier les données par timesteps
+    sorted_history = sorted(history, key=lambda h: h.get('timesteps', 0))
+
+    timesteps = [h.get('timesteps', 0) for h in sorted_history]
     # Sharpe Ratio est dans institutional_metrics, pas directement dans le checkpoint
-    sharpe = [h.get('institutional_metrics', {}).get('sharpe_ratio', 0) for h in history]
+    sharpe = [h.get('institutional_metrics', {}).get('sharpe_ratio', 0) for h in sorted_history]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=timesteps,
         y=sharpe,
-        mode='lines',
+        mode='lines+markers',
         name='Sharpe Ratio',
-        line=dict(color='#51CF66', width=2)
+        line=dict(color='#51CF66', width=3),
+        marker=dict(size=4)
     ))
 
-    fig.add_hline(y=1.0, line_dash="dash", line_color="yellow", annotation_text="Target (1.0)")
-    fig.add_hline(y=1.5, line_dash="dash", line_color="green", annotation_text="Excellent (1.5)")
+    fig.add_hline(y=0, line_dash="dot", line_color="gray", annotation_text="Zero", line_width=1)
+    fig.add_hline(y=1.0, line_dash="dash", line_color="yellow", annotation_text="Target (1.0)", line_width=2)
+    fig.add_hline(y=1.5, line_dash="dash", line_color="green", annotation_text="Excellent (1.5)", line_width=2)
 
     fig.update_layout(
-        title="Sharpe Ratio",
+        title="Sharpe Ratio Evolution",
         xaxis_title="Timesteps",
         yaxis_title="Sharpe Ratio",
         hovermode='x unified',
         template='plotly_dark',
-        height=400
+        height=450,
+        showlegend=True
     )
 
     return fig
