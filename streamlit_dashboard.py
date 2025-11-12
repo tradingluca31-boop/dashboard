@@ -910,8 +910,8 @@ with st.expander("📊 Statistiques Détaillées Complètes", expanded=True):
 
     with col1:
         st.markdown("**⚠️ Drawdown Metrics (Hedge Fund Grade)**")
-        st.markdown(f"- **Max DD %**: {metrics['max_dd_pct']:.2f}%")
-        st.markdown(f"- **Max DD $**: ${metrics['max_dd_dollar']:,.2f}")
+        st.markdown(f"- Max DD %: {metrics['max_dd_pct']:.2f}%")
+        st.markdown(f"- Max DD $: ${metrics['max_dd_dollar']:,.2f}")
         st.markdown(f"- **Peak → Trough**: ${metrics['peak_equity_at_dd']:,.0f} → ${metrics['equity_at_dd']:,.0f}")
         st.markdown(f"- **Timestep at DD**: {metrics['timestep_at_dd']:,}")
         dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
