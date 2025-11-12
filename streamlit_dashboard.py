@@ -292,16 +292,16 @@ def create_equity_curve(history):
             y=position_equity,
             mode='markers',
             name=f'🔴 Position Ouverte ({len(position_timesteps)} points)',
-            marker=dict(color='red', size=8, symbol='circle'),
+            marker=dict(color='#FF0000', size=14, symbol='circle', line=dict(color='white', width=2)),  # PLUS GROS + BORDURE BLANCHE
             hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Equity</b>: $%{y:,.2f}<br><b>Unrealized PnL</b>: $%{customdata:,.2f}<extra></extra>',
             customdata=position_diff,
-            opacity=0.8
+            opacity=1.0  # Opacité maximale
         ))
 
     fig.add_hline(y=100000, line_dash="dash", line_color="gray", annotation_text="Initial Capital ($100,000)", line_width=2)
 
     # Annotation explicative
-    annotation_text = f"<i>🔴 Points rouges = Position ouverte ({positions_count}/{total_checkpoints} checkpoints, {positions_count/total_checkpoints*100:.1f}%)<br>Si lignes superposées = Pas de position à ce moment-là</i>"
+    annotation_text = f"<b>🔴 Points rouges = Position ouverte ({positions_count}/{total_checkpoints} checkpoints, {positions_count/total_checkpoints*100:.1f}%)</b><br>Si lignes superposées = Pas de position à ce moment-là"
 
     fig.update_layout(
         title={
@@ -312,26 +312,27 @@ def create_equity_curve(history):
         yaxis_title="Capital ($)",
         hovermode='closest',
         template='plotly_dark',
-        height=450,
+        height=500,  # Augmenté pour faire de la place à l'annotation
         showlegend=True,
         legend=dict(
             yanchor="top",
-            y=1.15,  # AU-DESSUS du graphique (hors de la zone de tracé)
+            y=1.25,  # ENCORE PLUS HAUT (était 1.15)
             xanchor="left",
-            x=0.01,
-            bgcolor='rgba(0,0,0,0.8)',
+            x=0.01,  # Déjà à gauche
+            bgcolor='rgba(0,0,0,0.9)',
             bordercolor='white',
             borderwidth=2,
-            font=dict(size=13, color='white')
+            font=dict(size=12, color='white')
         ),
         annotations=[
             dict(
                 text=annotation_text,
                 xref="paper", yref="paper",
-                x=0.5, y=-0.15,
+                x=0.5, y=-0.22,  # PLUS BAS (était -0.15)
                 showarrow=False,
-                font=dict(size=11, color='#FFD700'),
-                xanchor='center'
+                font=dict(size=12, color='#CCCCCC', family='Arial'),  # GRIS CLAIR au lieu de jaune
+                xanchor='center',
+                align='center'
             )
         ]
     )
