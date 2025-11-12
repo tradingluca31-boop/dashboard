@@ -717,41 +717,56 @@ st.header("⚠️ Risk Management")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    # ⭐ HEDGE FUND: Peak equity et trough au moment du max DD (historique)
-    peak_equity_at_dd = metrics['peak_equity_at_dd']
-    equity_at_dd = metrics['equity_at_dd']
-    timestep_at_dd = metrics['timestep_at_dd']
-    current_equity = metrics['equity']
+    # Sortino Ratio (downside risk)
+    sortino_value = metrics['sortino']
+    if sortino_value > 1.5:
+        sortino_delta = "✅ Excellent"
+    elif sortino_value > 1.0:
+        sortino_delta = "✅ Bon"
+    elif sortino_value > 0:
+        sortino_delta = "⚠️ Faible"
+    else:
+        sortino_delta = "❌ Négatif"
 
-    dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
     st.metric(
-        label=f"Max DD % (${peak_equity_at_dd:,.0f} → ${equity_at_dd:,.0f})",
-        value=f"{metrics['max_dd_pct']:.2f}%",
-        delta=dd_status,
-        help=f"⚠️ DD = (Peak - Trough) / Peak * 100\n\nPeak: ${peak_equity_at_dd:,.0f}\nTrough: ${equity_at_dd:,.0f}\nPerte: ${metrics['max_dd_dollar']:,.0f}\n\nTimestep: {timestep_at_dd:,}\nCurrent Equity: ${current_equity:,.0f}"
+        label="Sortino Ratio",
+        value=f"{sortino_value:.2f}",
+        delta=sortino_delta,
+        help="Risk-adjusted return focusing on downside volatility (better than Sharpe for asymmetric risk)"
     )
 
 with col2:
-    # ⭐ HEDGE FUND: VRAI Max DD $ historique (pas projeté)
-    recovery_pct = ((current_equity - equity_at_dd) / metrics['max_dd_dollar']) * 100 if metrics['max_dd_dollar'] > 0 else 0
+    # Calmar Ratio (return / max DD)
+    calmar_value = metrics['calmar']
+    if calmar_value > 1.0:
+        calmar_delta = "✅ Excellent"
+    elif calmar_value > 0.5:
+        calmar_delta = "✅ Bon"
+    elif calmar_value > 0:
+        calmar_delta = "⚠️ Faible"
+    else:
+        calmar_delta = "❌ Négatif"
 
     st.metric(
-        label=f"Max DD $ (${peak_equity_at_dd:,.0f} → ${equity_at_dd:,.0f})",
-        value=f"${metrics['max_dd_dollar']:,.2f}",
-        delta=f"Recovery: +{recovery_pct:.0f}%" if recovery_pct > 0 else "No recovery",
-        help=f"💰 VRAI Max DD historique (Hedge Fund method)\n\nPeak: ${peak_equity_at_dd:,.0f}\nTrough: ${equity_at_dd:,.0f}\nPerte: ${metrics['max_dd_dollar']:,.0f}\n\nTimestep: {timestep_at_dd:,}\nCurrent Equity: ${current_equity:,.0f}\nRecovery: +{recovery_pct:.0f}% depuis le creux"
+        label="Calmar Ratio",
+        value=f"{calmar_value:.2f}",
+        delta=calmar_delta,
+        help="Return / Max Drawdown - Measures return per unit of downside risk"
     )
 
 with col3:
     st.metric(
         label="Avg Win",
-        value=f"${metrics['avg_win']:.2f}"
+        value=f"${metrics['avg_win']:.2f}",
+        help="Gain moyen par trade gagnant"
     )
 
 with col4:
     st.metric(
         label="Avg Loss",
-        value=f"$-{metrics['avg_loss']:.2f}"  # Afficher avec signe négatif
+        value=f"${abs(metrics['avg_loss']):.2f}",
+        delta=f"Avg RR: {metrics['avg_rr']:.2f}R",
+        help="Perte moyenne par trade perdant"
     )
 
 # === SECTION 3.5: MÉTRIQUES INSTITUTIONNELLES ===
