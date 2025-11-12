@@ -666,6 +666,51 @@ with col4:
         value=f"{metrics['max_rr']:.2f}R"
     )
 
+# ⭐ LIGNE 2: MÉTRIQUES DE RISQUE DANS PERFORMANCE (AU DÉBUT)
+st.markdown("---")
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    # Max DD % dès le début
+    peak_equity_at_dd = metrics['peak_equity_at_dd']
+    equity_at_dd = metrics['equity_at_dd']
+    dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 VIOLATION"
+
+    st.metric(
+        label=f"Max DD % (${peak_equity_at_dd:,.0f} → ${equity_at_dd:,.0f})",
+        value=f"{metrics['max_dd_pct']:.2f}%",
+        delta=dd_status,
+        help=f"⚠️ Max Drawdown historique\n\nPeak: ${peak_equity_at_dd:,.0f}\nTrough: ${equity_at_dd:,.0f}\nPerte: ${metrics['max_dd_dollar']:,.0f}"
+    )
+
+with col2:
+    # Max DD $ dès le début
+    current_equity = metrics['equity']
+    recovery_pct = ((current_equity - equity_at_dd) / metrics['max_dd_dollar']) * 100 if metrics['max_dd_dollar'] > 0 else 0
+
+    st.metric(
+        label="Max DD ($)",
+        value=f"${metrics['max_dd_dollar']:,.2f}",
+        delta=f"Recovery: +{recovery_pct:.0f}%" if recovery_pct > 0 else "No recovery",
+        help=f"💰 Perte maximale historique\n\nPeak: ${peak_equity_at_dd:,.0f}\nTrough: ${equity_at_dd:,.0f}"
+    )
+
+with col3:
+    st.metric(
+        label="VaR 95%",
+        value=f"{metrics['var_95']:.2f}%",
+        delta="✅ OK" if metrics['var_95'] > -2.0 else "⚠️ Élevé",
+        help="Value at Risk - Perte max attendue dans 95% des cas"
+    )
+
+with col4:
+    st.metric(
+        label="CVaR 95%",
+        value=f"{metrics['cvar_95']:.2f}%",
+        delta="✅ OK" if metrics['cvar_95'] > -3.0 else "⚠️ Élevé",
+        help="Conditional VaR - Perte moyenne dans les pires 5% des cas"
+    )
+
 # === SECTION 3: RISK ===
 st.header("⚠️ Risk Management")
 
