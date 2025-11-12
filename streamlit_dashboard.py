@@ -356,9 +356,9 @@ def create_equity_curve(history):
         showlegend=True,
         legend=dict(
             yanchor="top",
-            y=1.20,  # TRÈS HAUT - au-dessus du titre
-            xanchor="left",
-            x=0.01,
+            y=0.98,  # EN HAUT À DROITE - à l'intérieur du graphique
+            xanchor="right",
+            x=0.99,  # DROITE
             bgcolor='rgba(0,0,0,0.9)',
             bordercolor='white',
             borderwidth=2,
