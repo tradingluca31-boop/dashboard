@@ -105,7 +105,8 @@ def calculate_metrics(data):
     max_loss = min([normalize_pnl(t['pnl']) for t in losing_trades], default=0)
 
     # Max RR (meilleur trade / perte moyenne)
-    max_rr = max_win / abs(avg_loss) if avg_loss < 0 else 0
+    # avg_loss dans le JSON est déjà positif (valeur absolue)
+    max_rr = max_win / avg_loss if avg_loss > 0 else 0
 
     # ROI depuis JSON (déjà en %)
     roi = latest.get('roi_pct', 0)
@@ -406,7 +407,7 @@ with col3:
 with col4:
     st.metric(
         label="Avg Loss",
-        value=f"${metrics['avg_loss']:.2f}"
+        value=f"$-{metrics['avg_loss']:.2f}"  # Afficher avec signe négatif
     )
 
 # === SECTION 3.5: MÉTRIQUES INSTITUTIONNELLES ===
