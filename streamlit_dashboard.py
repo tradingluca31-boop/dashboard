@@ -119,9 +119,17 @@ def calculate_metrics(data):
     # Sharpe Ratio
     sharpe = latest.get('sharpe_ratio', 0)
 
-    # Max Drawdown
-    max_dd_pct = latest.get('max_drawdown_pct', 0) * 100
-    max_dd_dollar = (100000 * max_dd_pct / 100) if max_dd_pct > 0 else 0
+    # Max Drawdown (déjà en pourcentage dans le JSON, NE PAS multiplier par 100)
+    max_dd_pct = latest.get('max_drawdown_pct', 0)
+
+    # Calcul Max DD en dollars (basé sur l'equity actuelle)
+    current_equity = latest.get('equity', 100000)
+    if max_dd_pct > 0:
+        # Le peak equity est l'equity actuelle divisée par (1 - DD%)
+        peak_equity = current_equity / (1 - max_dd_pct / 100)
+        max_dd_dollar = peak_equity - current_equity
+    else:
+        max_dd_dollar = 0
 
     return {
         'timesteps': latest.get('timesteps', 0),
@@ -176,7 +184,8 @@ def create_equity_curve(history):
 def create_drawdown_chart(history):
     """Crée le graphique de drawdown"""
     timesteps = [h.get('timesteps', 0) for h in history]
-    dd_pct = [h.get('max_drawdown_pct', 0) * 100 for h in history]
+    # max_drawdown_pct est déjà en pourcentage dans le JSON, NE PAS multiplier
+    dd_pct = [h.get('max_drawdown_pct', 0) for h in history]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -344,10 +353,12 @@ with col2:
     )
 
 with col3:
+    sharpe_display = metrics['sharpe'] if metrics['sharpe'] > 0 else "N/A"
+    sharpe_delta = "✅ Bon" if metrics['sharpe'] > 1.0 else ("⚠️ En cours..." if metrics['sharpe'] == 0 else "⚠️ Faible")
     st.metric(
         label="Sharpe Ratio",
-        value=f"{metrics['sharpe']:.2f}",
-        delta="✅ Bon" if metrics['sharpe'] > 1.0 else "⚠️ Faible"
+        value=sharpe_display if sharpe_display == "N/A" else f"{sharpe_display:.2f}",
+        delta=sharpe_delta
     )
 
 with col4:
