@@ -79,45 +79,43 @@ def calculate_metrics(data):
                 seen_trades.add(key)
                 all_trades.append(trade)
 
-    # Calcul Total PnL - Double vérification
-    total_pnl_from_trades = sum(normalize_pnl(t.get('pnl', 0)) for t in all_trades)
-    equity_delta = latest['equity'] - 100000
-    difference = abs(total_pnl_from_trades - equity_delta)
+    # Récupération des statistiques précalculées (DÉJÀ NORMALISÉES dans le JSON)
+    trading_stats = latest.get('trading_stats', {})
+    institutional_metrics = latest.get('institutional_metrics', {})
 
-    # Utilise somme trades si cohérent, sinon equity delta
-    if difference < 100:
-        total_pnl = total_pnl_from_trades
-        pnl_method = "✅ Somme trades (cohérent)"
-    else:
-        total_pnl = equity_delta
-        pnl_method = f"⚠️ Equity delta (diff: ${difference:.2f})"
+    # Total PnL depuis equity
+    total_pnl = latest['equity'] - 100000
+    pnl_method = "✅ Equity delta"
 
-    # Calcul des métriques de trading
+    # Récupération des trades avec normalisation PnL
     winning_trades = [t for t in all_trades if normalize_pnl(t.get('pnl', 0)) > 0]
     losing_trades = [t for t in all_trades if normalize_pnl(t.get('pnl', 0)) < 0]
 
-    total_trades = len(all_trades)
-    win_rate = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0
+    # Métriques de trading (du JSON, PAS de recalcul)
+    total_trades = trading_stats.get('total_trades', len(all_trades))
+    win_rate = trading_stats.get('win_rate', 0)
+    profit_factor = trading_stats.get('profit_factor', 0)
 
-    avg_win = sum(normalize_pnl(t['pnl']) for t in winning_trades) / len(winning_trades) if winning_trades else 0
-    avg_loss = sum(normalize_pnl(t['pnl']) for t in losing_trades) / len(losing_trades) if losing_trades else 0
+    # Avg Win/Loss depuis JSON (DOIVENT être normalisés - multipliés par 100 dans le JSON)
+    avg_win = trading_stats.get('avg_win', 0) / PNL_MULTIPLIER
+    avg_loss = trading_stats.get('avg_loss', 0) / PNL_MULTIPLIER
 
+    # Max Win/Loss calculés depuis les trades (normalisation appliquée)
     max_win = max([normalize_pnl(t['pnl']) for t in winning_trades], default=0)
     max_loss = min([normalize_pnl(t['pnl']) for t in losing_trades], default=0)
 
-    # Profit Factor
-    total_wins = sum(normalize_pnl(t['pnl']) for t in winning_trades)
-    total_losses = abs(sum(normalize_pnl(t['pnl']) for t in losing_trades))
-    profit_factor = total_wins / total_losses if total_losses > 0 else 0
-
-    # Max RR (meilleur trade / perte moyenne, PAS pire perte)
+    # Max RR (meilleur trade / perte moyenne)
     max_rr = max_win / abs(avg_loss) if avg_loss < 0 else 0
 
-    # ROI
-    roi = (latest['equity'] - 100000) / 100000 * 100
+    # ROI depuis JSON (déjà en %)
+    roi = latest.get('roi_pct', 0)
 
-    # Sharpe Ratio
-    sharpe = latest.get('sharpe_ratio', 0)
+    # Métriques institutionnelles
+    sharpe = institutional_metrics.get('sharpe_ratio', 0)
+    sortino = institutional_metrics.get('sortino_ratio', 0)
+    calmar = institutional_metrics.get('calmar_ratio', 0)
+    var_95 = institutional_metrics.get('var_95', 0) * 100  # Convertir en %
+    cvar_95 = institutional_metrics.get('cvar_95', 0) * 100  # Convertir en %
 
     # Max Drawdown (déjà en pourcentage dans le JSON, NE PAS multiplier par 100)
     max_dd_pct = latest.get('max_drawdown_pct', 0)
@@ -138,6 +136,10 @@ def calculate_metrics(data):
         'pnl_method': pnl_method,
         'roi': roi,
         'sharpe': sharpe,
+        'sortino': sortino,
+        'calmar': calmar,
+        'var_95': var_95,
+        'cvar_95': cvar_95,
         'max_dd_pct': max_dd_pct,
         'max_dd_dollar': max_dd_dollar,
         'total_trades': total_trades,
@@ -213,7 +215,8 @@ def create_drawdown_chart(history):
 def create_sharpe_chart(history):
     """Crée le graphique du Sharpe Ratio"""
     timesteps = [h.get('timesteps', 0) for h in history]
-    sharpe = [h.get('sharpe_ratio', 0) for h in history]
+    # Sharpe Ratio est dans institutional_metrics, pas directement dans le checkpoint
+    sharpe = [h.get('institutional_metrics', {}).get('sharpe_ratio', 0) for h in history]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -353,11 +356,19 @@ with col2:
     )
 
 with col3:
-    sharpe_display = metrics['sharpe'] if metrics['sharpe'] > 0 else "N/A"
-    sharpe_delta = "✅ Bon" if metrics['sharpe'] > 1.0 else ("⚠️ En cours..." if metrics['sharpe'] == 0 else "⚠️ Faible")
+    sharpe_value = metrics['sharpe']
+    if sharpe_value > 1.5:
+        sharpe_delta = "✅ Excellent"
+    elif sharpe_value > 1.0:
+        sharpe_delta = "✅ Bon"
+    elif sharpe_value > 0:
+        sharpe_delta = "⚠️ Faible"
+    else:
+        sharpe_delta = "❌ Négatif"
+
     st.metric(
         label="Sharpe Ratio",
-        value=sharpe_display if sharpe_display == "N/A" else f"{sharpe_display:.2f}",
+        value=f"{sharpe_value:.2f}",
         delta=sharpe_delta
     )
 
@@ -396,6 +407,39 @@ with col4:
     st.metric(
         label="Avg Loss",
         value=f"${metrics['avg_loss']:.2f}"
+    )
+
+# === SECTION 3.5: MÉTRIQUES INSTITUTIONNELLES ===
+st.header("🏛️ Métriques Institutionnelles")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric(
+        label="Sortino Ratio",
+        value=f"{metrics['sortino']:.2f}",
+        delta="✅ Bon" if metrics['sortino'] > 1.5 else "⚠️ Faible"
+    )
+
+with col2:
+    st.metric(
+        label="Calmar Ratio",
+        value=f"{metrics['calmar']:.2f}",
+        delta="✅ Bon" if metrics['calmar'] > 1.0 else "⚠️ Faible"
+    )
+
+with col3:
+    st.metric(
+        label="VaR 95%",
+        value=f"{metrics['var_95']:.2f}%",
+        delta="✅ OK" if metrics['var_95'] > -2.0 else "⚠️ Élevé"
+    )
+
+with col4:
+    st.metric(
+        label="CVaR 95%",
+        value=f"{metrics['cvar_95']:.2f}%",
+        delta="✅ OK" if metrics['cvar_95'] > -3.0 else "⚠️ Élevé"
     )
 
 # === SECTION 4: GRAPHIQUES ===
