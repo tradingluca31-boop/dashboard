@@ -257,10 +257,9 @@ def create_equity_curve(history):
     fig.add_trace(go.Scatter(
         x=timesteps,
         y=balance,
-        mode='lines+markers',
+        mode='lines',
         name='✅ Balance (Réalisé)',
-        line=dict(color='#00D9FF', width=4, dash='solid'),  # Cyan - trait PLEIN et PLUS ÉPAIS
-        marker=dict(size=6, symbol='diamond'),
+        line=dict(color='#FF1493', width=5, dash='solid'),  # ROSE FUSHIA - ÉPAIS
         hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Balance</b>: $%{y:,.2f}<br><i>(Positions fermées seulement)</i><extra></extra>',
         opacity=1.0
     ))
@@ -269,12 +268,11 @@ def create_equity_curve(history):
     fig.add_trace(go.Scatter(
         x=timesteps,
         y=equity,
-        mode='lines+markers',
+        mode='lines',
         name='💰 Equity (Total)',
-        line=dict(color='#00FF00', width=3, dash='dot'),  # Vert FLUO - trait POINTILLÉ pour distinction
-        marker=dict(size=5, symbol='circle'),
+        line=dict(color='#00FF00', width=2, dash='dash'),  # VERT FLUO - FIN et TIRETS
         hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Equity</b>: $%{y:,.2f}<br><i>(Balance + positions ouvertes)</i><extra></extra>',
-        opacity=0.9  # Légère transparence pour voir Balance dessous
+        opacity=1.0
     ))
 
     fig.add_hline(y=100000, line_dash="dash", line_color="gray", annotation_text="Initial Capital ($100,000)", line_width=2)
