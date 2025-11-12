@@ -351,26 +351,26 @@ def create_equity_curve(history):
         yaxis_title="Capital ($)",
         hovermode='closest',
         template='plotly_dark',
-        height=600,  # PLUS HAUT
-        margin=dict(t=100, b=120),  # MARGES: top réduit, bottom AUGMENTÉ pour annotation
+        height=700,  # HAUTEUR MAXIMALE pour avoir de la place
+        margin=dict(t=140, b=180),  # MARGES MAXIMALES: top ET bottom très grands
         showlegend=True,
         legend=dict(
             yanchor="top",
-            y=1.15,  # RÉDUIT pour ne pas couper titre
+            y=1.20,  # TRÈS HAUT - au-dessus du titre
             xanchor="left",
             x=0.01,
             bgcolor='rgba(0,0,0,0.9)',
             bordercolor='white',
             borderwidth=2,
-            font=dict(size=10, color='white')
+            font=dict(size=9, color='white')  # Police plus petite
         ),
         annotations=[
             dict(
                 text=annotation_text,
                 xref="paper", yref="paper",
-                x=0.5, y=-0.15,  # PLUS HAUT grâce à margin bottom=120
+                x=0.5, y=-0.22,  # TRÈS BAS grâce à margin bottom=180
                 showarrow=False,
-                font=dict(size=10, color='#999999', family='Arial'),  # GRIS PLUS CLAIR, PLUS PETIT
+                font=dict(size=9, color='#777777', family='Arial'),  # ENCORE PLUS DISCRET
                 xanchor='center',
                 align='center'
             )
@@ -409,16 +409,16 @@ def create_drawdown_chart(history):
         yaxis_title="Max DD (%)",
         hovermode='x unified',
         template='plotly_dark',
-        height=600,  # MÊME HAUTEUR
-        margin=dict(t=100, b=120),  # MARGES COHÉRENTES
+        height=700,  # MÊME HAUTEUR que equity curve
+        margin=dict(t=140, b=180),  # MARGES COHÉRENTES avec equity curve
         showlegend=True,
         annotations=[
             dict(
                 text="<b>⚠️ DD = (Peak - Current) / Peak</b>, PAS depuis $100K initial",
                 xref="paper", yref="paper",
-                x=0.5, y=-0.15,  # MÊME POSITION
+                x=0.5, y=-0.22,  # MÊME POSITION que equity curve
                 showarrow=False,
-                font=dict(size=10, color='#999999', family='Arial'),  # GRIS PLUS CLAIR
+                font=dict(size=9, color='#777777', family='Arial'),  # MÊME STYLE que equity curve
                 xanchor='center'
             )
         ]
