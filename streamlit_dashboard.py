@@ -288,27 +288,69 @@ def create_sharpe_chart(history):
     return fig
 
 def create_pnl_distribution(trades):
-    """Crée l'histogramme de distribution des PnL"""
-    pnls = [normalize_pnl(t.get('pnl', 0)) for t in trades]
+    """Crée l'histogramme de distribution des PnL (filtre les trades < $0.50 pour clarté)"""
+    # Normaliser tous les PnL
+    all_pnls = [normalize_pnl(t.get('pnl', 0)) for t in trades]
+
+    # Filtrer les trades avec PnL insignifiant (< $0.50) - bruit d'exploration RL
+    MIN_PNL_THRESHOLD = 0.50
+    pnls = [p for p in all_pnls if abs(p) >= MIN_PNL_THRESHOLD]
+
+    # Séparer gains et pertes pour coloration distincte
+    gains = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
 
     fig = go.Figure()
-    fig.add_trace(go.Histogram(
-        x=pnls,
-        nbinsx=50,
-        marker=dict(
-            color=pnls,
-            colorscale='RdYlGn',
-            cmin=-max(abs(min(pnls, default=0)), abs(max(pnls, default=0))),
-            cmax=max(abs(min(pnls, default=0)), abs(max(pnls, default=0)))
-        )
-    ))
+
+    # Histogram des pertes (ROUGE)
+    if losses:
+        fig.add_trace(go.Histogram(
+            x=losses,
+            name='❌ Pertes',
+            marker=dict(color='#FF4444', opacity=0.7),
+            nbinsx=30,
+            hovertemplate='<b>PnL</b>: $%{x:.2f}<br><b>Trades</b>: %{y}<extra></extra>'
+        ))
+
+    # Histogram des gains (VERT)
+    if gains:
+        fig.add_trace(go.Histogram(
+            x=gains,
+            name='✅ Gains',
+            marker=dict(color='#00FF7F', opacity=0.7),
+            nbinsx=30,
+            hovertemplate='<b>PnL</b>: $%{x:.2f}<br><b>Trades</b>: %{y}<extra></extra>'
+        ))
+
+    # Ligne verticale à 0
+    fig.add_vline(x=0, line_dash="dash", line_color="white", line_width=2, annotation_text="Break-even")
 
     fig.update_layout(
-        title="Distribution des PnL par Trade",
+        title=f"Distribution des PnL par Trade (filtre > ${MIN_PNL_THRESHOLD:.2f})",
         xaxis_title="PnL ($)",
         yaxis_title="Nombre de trades",
         template='plotly_dark',
-        height=400
+        height=400,
+        barmode='overlay',
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="right",
+            x=0.99,
+            bgcolor='rgba(0,0,0,0.5)',
+            bordercolor='white',
+            borderwidth=1
+        ),
+        annotations=[
+            dict(
+                text=f"<i>Total: {len(pnls)} trades (exclus {len(all_pnls) - len(pnls)} trades < ${MIN_PNL_THRESHOLD:.2f})</i>",
+                xref="paper", yref="paper",
+                x=0.5, y=-0.15,
+                showarrow=False,
+                font=dict(size=10, color='gray')
+            )
+        ]
     )
 
     return fig
