@@ -262,7 +262,8 @@ def calculate_streaks(trades):
     current_type = None
 
     for trade in trades:
-        pnl = normalize_pnl(trade.get('pnl', 0))
+        # FIX 2025-11-12: PnL déjà en dollars - pas de division par 100
+        pnl = trade.get('pnl', 0)
 
         if pnl > 0:  # Gain
             if current_type == 'win':
@@ -384,9 +385,10 @@ def calculate_metrics(data):
     total_pnl = latest['equity'] - 100000
     pnl_method = "✅ Equity delta"
 
-    # Récupération des trades avec normalisation PnL
-    winning_trades = [t for t in all_trades if normalize_pnl(t.get('pnl', 0)) > 0]
-    losing_trades = [t for t in all_trades if normalize_pnl(t.get('pnl', 0)) < 0]
+    # Récupération des trades (PnL déjà en dollars)
+    # FIX 2025-11-12: Pas de normalisation nécessaire
+    winning_trades = [t for t in all_trades if t.get('pnl', 0) > 0]
+    losing_trades = [t for t in all_trades if t.get('pnl', 0) < 0]
 
     # Métriques de trading (du JSON, PAS de recalcul)
     total_trades = trading_stats.get('total_trades', len(all_trades))
@@ -398,9 +400,10 @@ def calculate_metrics(data):
     avg_win = trading_stats.get('avg_win', 0)  # Déjà en dollars (ex: 360.90)
     avg_loss = trading_stats.get('avg_loss', 0)  # Déjà en dollars (ex: 372.58)
 
-    # Max Win/Loss calculés depuis les trades (normalisation appliquée)
-    max_win = max([normalize_pnl(t['pnl']) for t in winning_trades], default=0)
-    max_loss = min([normalize_pnl(t['pnl']) for t in losing_trades], default=0)
+    # Max Win/Loss calculés depuis les trades (DÉJÀ EN DOLLARS - PAS de division)
+    # FIX 2025-11-12: Même bug que avg_win/avg_loss - les PnL dans trades[] sont déjà en $
+    max_win = max([t['pnl'] for t in winning_trades], default=0)
+    max_loss = min([t['pnl'] for t in losing_trades], default=0)
 
     # Max RR (meilleur gain / pire perte) - Ratio Risk/Reward réel
     # max_loss est négatif, donc on prend sa valeur absolue
@@ -668,12 +671,12 @@ def create_sharpe_chart(history):
     return fig
 
 def create_pnl_distribution(trades):
-    """Crée l'histogramme de distribution des PnL (filtre les trades < $0.50 pour clarté)"""
-    # Normaliser tous les PnL
-    all_pnls = [normalize_pnl(t.get('pnl', 0)) for t in trades]
+    """Crée l'histogramme de distribution des PnL (filtre les trades < $50 pour clarté)"""
+    # FIX 2025-11-12: PnL déjà en dollars - pas de division par 100
+    all_pnls = [t.get('pnl', 0) for t in trades]
 
-    # Filtrer les trades avec PnL insignifiant (< $0.50) - bruit d'exploration RL
-    MIN_PNL_THRESHOLD = 0.50
+    # Filtrer les trades avec PnL insignifiant (< $50) - bruit d'exploration RL
+    MIN_PNL_THRESHOLD = 50.0  # $50 (équivalent à 0.50 après division par 100)
     pnls = [p for p in all_pnls if abs(p) >= MIN_PNL_THRESHOLD]
 
     # Séparer gains et pertes pour coloration distincte
@@ -1022,14 +1025,15 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("✅ Top 10 Meilleurs Trades")
-    best_trades = sorted(metrics['all_trades'], key=lambda t: normalize_pnl(t.get('pnl', 0)), reverse=True)[:10]
+    # FIX 2025-11-12: PnL déjà en dollars - pas de division par 100
+    best_trades = sorted(metrics['all_trades'], key=lambda t: t.get('pnl', 0), reverse=True)[:10]
 
     best_df = pd.DataFrame([
         {
             'Entry': f"${t.get('entry_price', 0):.2f}",
             'Exit': f"${t.get('exit_price', 0):.2f}",
             'Size': t.get('size', 0),
-            'PnL': f"${normalize_pnl(t.get('pnl', 0)):.2f}"
+            'PnL': f"${t.get('pnl', 0):.2f}"  # Déjà en dollars
         }
         for t in best_trades
     ])
@@ -1037,14 +1041,15 @@ with col1:
 
 with col2:
     st.subheader("❌ Top 10 Pires Trades")
-    worst_trades = sorted(metrics['all_trades'], key=lambda t: normalize_pnl(t.get('pnl', 0)))[:10]
+    # FIX 2025-11-12: PnL déjà en dollars - pas de division par 100
+    worst_trades = sorted(metrics['all_trades'], key=lambda t: t.get('pnl', 0))[:10]
 
     worst_df = pd.DataFrame([
         {
             'Entry': f"${t.get('entry_price', 0):.2f}",
             'Exit': f"${t.get('exit_price', 0):.2f}",
             'Size': t.get('size', 0),
-            'PnL': f"${normalize_pnl(t.get('pnl', 0)):.2f}"
+            'PnL': f"${t.get('pnl', 0):.2f}"  # Déjà en dollars
         }
         for t in worst_trades
     ])
