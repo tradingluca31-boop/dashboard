@@ -44,6 +44,72 @@ def load_data():
         st.error(f"❌ Erreur chargement JSON: {e}")
         return None
 
+def load_top_features():
+    """Charge les top 100 features depuis le fichier de configuration"""
+    # Plusieurs chemins possibles pour trouver le fichier
+    possible_paths = [
+        Path(__file__).parent / "top100_features_agent7.txt",
+        Path(__file__).parent.parent.parent.parent / "output" / "feature_selection" / "top100_features_agent7.txt",
+        Path("C:/Users/lbye3/Desktop/GoldRL/output/feature_selection/top100_features_agent7.txt")
+    ]
+
+    for features_path in possible_paths:
+        if features_path.exists():
+            try:
+                with open(features_path, 'r', encoding='utf-8') as f:
+                    # Filtrer les lignes de commentaires et lignes vides
+                    features = [line.strip() for line in f.readlines()
+                               if line.strip() and not line.strip().startswith('#')]
+                return features
+            except Exception as e:
+                st.warning(f"⚠️ Erreur lecture features: {e}")
+                return None
+
+    return None
+
+def calculate_streaks(trades):
+    """Calcule les séquences (streaks) de gains/pertes consécutifs"""
+    if not trades:
+        return {
+            'max_winning_streak': 0,
+            'max_losing_streak': 0,
+            'current_streak': 0,
+            'current_streak_type': 'N/A'
+        }
+
+    max_win_streak = 0
+    max_lose_streak = 0
+    current_streak = 0
+    current_type = None
+
+    for trade in trades:
+        pnl = normalize_pnl(trade.get('pnl', 0))
+
+        if pnl > 0:  # Gain
+            if current_type == 'win':
+                current_streak += 1
+            else:
+                current_streak = 1
+                current_type = 'win'
+            max_win_streak = max(max_win_streak, current_streak)
+        elif pnl < 0:  # Perte
+            if current_type == 'loss':
+                current_streak += 1
+            else:
+                current_streak = 1
+                current_type = 'loss'
+            max_lose_streak = max(max_lose_streak, current_streak)
+        else:  # Break-even
+            current_streak = 0
+            current_type = None
+
+    return {
+        'max_winning_streak': max_win_streak,
+        'max_losing_streak': max_lose_streak,
+        'current_streak': abs(current_streak),
+        'current_streak_type': '✅ Gains' if current_type == 'win' else ('❌ Pertes' if current_type == 'loss' else 'N/A')
+    }
+
 def calculate_metrics(data):
     """Calcule toutes les métriques depuis les données"""
     # Vérification robuste de la structure des données
@@ -130,6 +196,18 @@ def calculate_metrics(data):
     else:
         max_dd_dollar = 0
 
+    # Calcul des streaks (séquences)
+    streaks = calculate_streaks(all_trades)
+
+    # Expectancy (gain moyen par trade)
+    expectancy = (avg_win * (win_rate / 100)) - (abs(avg_loss) * ((100 - win_rate) / 100))
+
+    # Recovery Factor (Total Profit / Max DD)
+    recovery_factor = total_pnl / max_dd_dollar if max_dd_dollar > 0 else 0
+
+    # Avg RR (Risk/Reward moyen)
+    avg_rr = avg_win / abs(avg_loss) if avg_loss < 0 else 0
+
     return {
         'timesteps': latest.get('timesteps', 0),
         'equity': latest['equity'],
@@ -151,8 +229,15 @@ def calculate_metrics(data):
         'max_win': max_win,
         'max_loss': max_loss,
         'max_rr': max_rr,
+        'avg_rr': avg_rr,
+        'expectancy': expectancy,
+        'recovery_factor': recovery_factor,
         'winning_trades': len(winning_trades),
         'losing_trades': len(losing_trades),
+        'max_winning_streak': streaks['max_winning_streak'],
+        'max_losing_streak': streaks['max_losing_streak'],
+        'current_streak': streaks['current_streak'],
+        'current_streak_type': streaks['current_streak_type'],
         'all_trades': all_trades,
         'history': data  # data est déjà le tableau complet de checkpoints
     }
@@ -586,27 +671,207 @@ with col2:
     ])
     st.dataframe(worst_df, use_container_width=True)
 
-# === SECTION 6: STATISTIQUES DÉTAILLÉES ===
-with st.expander("📊 Statistiques Détaillées"):
-    col1, col2, col3 = st.columns(3)
+# === SECTION 6: STATISTIQUES DÉTAILLÉES COMPLÈTES (HEDGE FUND GRADE) ===
+with st.expander("📊 Statistiques Détaillées Complètes", expanded=True):
+    st.markdown("### 🎯 TRADING STATISTICS")
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.markdown("### Trades")
-        st.markdown(f"- **Total**: {metrics['total_trades']:,}")
-        st.markdown(f"- **Gagnants**: {metrics['winning_trades']:,} ({metrics['win_rate']:.1f}%)")
-        st.markdown(f"- **Perdants**: {metrics['losing_trades']:,} ({100-metrics['win_rate']:.1f}%)")
+        st.markdown("**📈 Trades Overview**")
+        st.markdown(f"- **Total Trades**: {metrics['total_trades']:,}")
+        st.markdown(f"- **✅ Gagnants**: {metrics['winning_trades']:,} ({metrics['win_rate']:.1f}%)")
+        st.markdown(f"- **❌ Perdants**: {metrics['losing_trades']:,} ({100-metrics['win_rate']:.1f}%)")
+        st.markdown(f"- **Win Rate**: {metrics['win_rate']:.1f}%")
 
     with col2:
-        st.markdown("### PnL Extremes")
-        st.markdown(f"- **Max Gain**: ${metrics['max_win']:.2f}")
-        st.markdown(f"- **Max Perte**: ${metrics['max_loss']:.2f}")
-        st.markdown(f"- **Total PnL**: ${metrics['total_pnl']:.2f}")
+        st.markdown("**💰 PnL Moyens**")
+        st.markdown(f"- **Avg Win**: ${metrics['avg_win']:.2f}")
+        st.markdown(f"- **Avg Loss**: $-{abs(metrics['avg_loss']):.2f}")
+        st.markdown(f"- **Avg RR**: {metrics['avg_rr']:.2f}R")
+        st.markdown(f"- **Expectancy**: ${metrics['expectancy']:.2f}/trade")
 
     with col3:
-        st.markdown("### Risk Metrics")
-        st.markdown(f"- **Sharpe**: {metrics['sharpe']:.2f}")
-        st.markdown(f"- **Max DD**: {metrics['max_dd_pct']:.2f}%")
+        st.markdown("**🎯 PnL Extremes**")
+        st.markdown(f"- **Max Gain**: ${metrics['max_win']:.2f}")
+        st.markdown(f"- **Max Perte**: ${metrics['max_loss']:.2f}")
+        st.markdown(f"- **Max RR**: {metrics['max_rr']:.2f}R")
+        st.markdown(f"- **Total PnL**: ${metrics['total_pnl']:.2f}")
+
+    with col4:
+        st.markdown("**🔥 Streaks (Séquences)**")
+        st.markdown(f"- **Max Win Streak**: {metrics['max_winning_streak']} trades")
+        st.markdown(f"- **Max Loss Streak**: {metrics['max_losing_streak']} trades")
+        st.markdown(f"- **Current Streak**: {metrics['current_streak']} ({metrics['current_streak_type']})")
+        st.markdown("")
+
+    st.markdown("---")
+    st.markdown("### 📊 RISK METRICS (INSTITUTIONAL GRADE)")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.markdown("**⚠️ Drawdown Metrics**")
+        st.markdown(f"- **Max DD %**: {metrics['max_dd_pct']:.2f}%")
+        st.markdown(f"- **Max DD $**: ${metrics['max_dd_dollar']:,.2f}")
+        dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
+        st.markdown(f"- **FTMO Status**: {dd_status}")
+        st.markdown(f"- **Recovery Factor**: {metrics['recovery_factor']:.2f}")
+
+    with col2:
+        st.markdown("**📈 Risk-Adjusted Returns**")
+        st.markdown(f"- **Sharpe Ratio**: {metrics['sharpe']:.2f}")
+        st.markdown(f"- **Sortino Ratio**: {metrics['sortino']:.2f}")
+        st.markdown(f"- **Calmar Ratio**: {metrics['calmar']:.2f}")
         st.markdown(f"- **Profit Factor**: {metrics['profit_factor']:.2f}")
+
+    with col3:
+        st.markdown("**📉 Tail Risk (VaR)**")
+        st.markdown(f"- **VaR 95%**: {metrics['var_95']:.2f}%")
+        var_status = "✅ OK" if metrics['var_95'] > -2.0 else "⚠️ Élevé"
+        st.markdown(f"- **VaR Status**: {var_status}")
+        st.markdown(f"- **CVaR 95%**: {metrics['cvar_95']:.2f}%")
+        cvar_status = "✅ OK" if metrics['cvar_95'] > -3.0 else "⚠️ Élevé"
+        st.markdown(f"- **CVaR Status**: {cvar_status}")
+
+    with col4:
+        st.markdown("**💼 Performance Summary**")
+        st.markdown(f"- **ROI**: {metrics['roi']:.2f}%")
+        st.markdown(f"- **Total Profit**: ${metrics['total_pnl']:,.2f}")
+        st.markdown(f"- **Equity**: ${metrics['equity']:,.2f}")
+        st.markdown(f"- **Timesteps**: {metrics['timesteps']:,}")
+
+# === SECTION 7: FEATURES ANALYSIS (SHAP-BASED) ===
+st.header("🧠 Features Analysis - Agent 7 (PPO)")
+
+def get_feature_emoji(feature):
+    """Retourne emoji selon le type de feature"""
+    if any(x in feature.lower() for x in ['cot', 'commitment']):
+        return "📊"
+    elif any(x in feature.lower() for x in ['macro', 'us_', 'fomc', 'cpi', 'nfp', 'score']):
+        return "🏛️"
+    elif any(x in feature.lower() for x in ['seasonal', 'seasonax', 'month', 'week']):
+        return "📅"
+    elif any(x in feature.lower() for x in ['corr', 'eurusd', 'usdjpy', 'dxy', 'audchf', 'usdchf']):
+        return "🔗"
+    elif any(x in feature.lower() for x in ['rsi', 'macd', 'adx', 'stoch', 'bb_', 'tsi', 'momentum']):
+        return "📈"
+    elif any(x in feature.lower() for x in ['volume', 'vol_', 'va_']):
+        return "📊"
+    elif any(x in feature.lower() for x in ['retail', 'long_pct', 'short_pct']):
+        return "👥"
+    else:
+        return "🔹"
+
+top_features = load_top_features()
+
+if top_features:
+    st.success(f"✅ **{len(top_features)} features** utilisées par l'agent RL (classement par importance SHAP)")
+    st.info("**📌 Note**: Les features sont triées par importance - Les premières ont le PLUS d'impact, les dernières le MOINS.")
+
+    # TOP 10 BEST FEATURES (les plus importantes)
+    st.markdown("---")
+    st.subheader("🏆 TOP 10 BEST FEATURES (Plus d'Impact)")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        for i, feature in enumerate(top_features[:5], 1):
+            emoji = get_feature_emoji(feature)
+            st.markdown(f"**#{i}** {emoji} `{feature}`")
+
+    with col2:
+        for i, feature in enumerate(top_features[5:10], 6):
+            emoji = get_feature_emoji(feature)
+            st.markdown(f"**#{i}** {emoji} `{feature}`")
+
+    # TOP 10 WORST FEATURES (les moins importantes)
+    st.markdown("---")
+    st.subheader("⚠️ TOP 10 WORST FEATURES (Moins d'Impact)")
+
+    if len(top_features) >= 10:
+        col1, col2 = st.columns(2)
+
+        worst_features = top_features[-10:]
+
+        with col1:
+            for i, feature in enumerate(worst_features[:5], len(top_features)-9):
+                emoji = get_feature_emoji(feature)
+                st.markdown(f"**#{i}** {emoji} `{feature}`")
+
+        with col2:
+            for i, feature in enumerate(worst_features[5:], len(top_features)-4):
+                emoji = get_feature_emoji(feature)
+                st.markdown(f"**#{i}** {emoji} `{feature}`")
+    else:
+        st.warning("Pas assez de features pour afficher le TOP 10 WORST")
+
+    # TOUTES LES FEATURES (dans un expander)
+    st.markdown("---")
+    with st.expander(f"📋 TOUTES LES {len(top_features)} FEATURES (Cliquer pour développer)", expanded=False):
+        num_cols = 3
+        features_per_col = (len(top_features) + num_cols - 1) // num_cols
+
+        cols = st.columns(num_cols)
+
+        for idx, feature in enumerate(top_features):
+            col_idx = idx // features_per_col
+            if col_idx < num_cols:
+                with cols[col_idx]:
+                    emoji = get_feature_emoji(feature)
+                    st.markdown(f"**#{idx+1}** {emoji} `{feature}`")
+
+    # Légende des catégories
+    with st.expander("📖 Légende des Catégories"):
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown("""
+            **📊 COT (Commitment of Traders)**
+            - Positions institutionnelles (Gold, DXY)
+            - Divergence comm/non-comm
+            - Z-score, percentiles
+
+            **🏛️ Macro Events**
+            - FOMC, NFP, CPI, PPI
+            - Taux, inflation, emploi
+            - Scores économiques (emploi, inflation, taux, croissance)
+            """)
+
+        with col2:
+            st.markdown("""
+            **📅 Seasonality**
+            - Strong/Best month (Seasonax)
+            - Weekly bias (bullish/bearish)
+            - Patterns saisonniers Gold
+
+            **🔗 Correlations**
+            - EURUSD, USDJPY, USDCHF, AUDCHF
+            - DXY (Dollar Index)
+            - Gold vs devises/indices
+            """)
+
+        with col3:
+            st.markdown("""
+            **📈 Technical Indicators**
+            - RSI, MACD, ADX, Stochastic
+            - Bollinger Bands, ATR, TSI
+            - SMA, EMA (H1, M15, D1)
+            - Momentum, Divergences
+
+            **👥 Retail Sentiment**
+            - Positions retail (DXY, Gold)
+            - Contrarian signal
+            """)
+
+else:
+    st.error("❌ **Fichier features non trouvé**")
+    st.info("""
+    **Chemins recherchés**:
+    - `C:/Users/lbye3/Desktop/GoldRL/AGENT/AGENT 7/ENTRAINEMENT/top100_features_agent7.txt`
+    - `C:/Users/lbye3/Desktop/GoldRL/output/feature_selection/top100_features_agent7.txt`
+
+    **Action**: Créer le fichier avec la liste des features utilisées par l'agent.
+    """)
 
 # Auto-refresh
 if auto_refresh:
