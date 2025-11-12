@@ -369,15 +369,16 @@ def create_drawdown_chart(history):
         yaxis_title="Max DD (%)",
         hovermode='x unified',
         template='plotly_dark',
-        height=450,
+        height=500,  # Augmenté pour faire de la place
         showlegend=True,
         annotations=[
             dict(
-                text="<i>⚠️ DD = (Peak - Current) / Peak, PAS depuis $100K initial</i>",
+                text="<b>⚠️ DD = (Peak - Current) / Peak</b>, PAS depuis $100K initial",
                 xref="paper", yref="paper",
-                x=0.5, y=-0.12,
+                x=0.5, y=-0.20,  # PLUS BAS (était -0.12)
                 showarrow=False,
-                font=dict(size=10, color='#FFD700')
+                font=dict(size=11, color='#CCCCCC', family='Arial'),  # GRIS CLAIR au lieu de jaune
+                xanchor='center'
             )
         ]
     )
