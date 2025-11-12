@@ -48,9 +48,9 @@ def load_top_features():
     """Charge les top 100 features depuis le fichier de configuration"""
     # Plusieurs chemins possibles pour trouver le fichier
     possible_paths = [
-        Path(__file__).parent / "top100_features_agent7.txt",
-        Path(__file__).parent.parent.parent.parent / "output" / "feature_selection" / "top100_features_agent7.txt",
-        Path("C:/Users/lbye3/Desktop/GoldRL/output/feature_selection/top100_features_agent7.txt")
+        Path(__file__).parent / "top100_features_agent7.txt",  # Même dossier que streamlit_dashboard.py
+        Path("C:/Users/lbye3/Desktop/GoldRL/output/feature_selection/top100_features_agent7.txt"),  # Chemin absolu principal
+        Path("C:/Users/lbye3/Desktop/GoldRL/AGENT/AGENT 7/ENTRAINEMENT/top100_features_agent7.txt")  # Backup
     ]
 
     for features_path in possible_paths:
@@ -108,6 +108,46 @@ def calculate_streaks(trades):
         'max_losing_streak': max_lose_streak,
         'current_streak': abs(current_streak),
         'current_streak_type': '✅ Gains' if current_type == 'win' else ('❌ Pertes' if current_type == 'loss' else 'N/A')
+    }
+
+def calculate_real_max_dd_dollar(history):
+    """
+    Calcule le VRAI Max DD en $ comme les hedge funds
+    = La plus grande perte en $ depuis un peak HISTORIQUE
+
+    Returns:
+        dict: {
+            'max_dd_dollar': float,  # Perte max en $ depuis peak
+            'peak_equity_at_dd': float,  # Equity au peak avant le DD
+            'timestep_at_dd': int  # Timestep où le max DD s'est produit
+        }
+    """
+    peak = 100000  # Capital initial
+    max_dd_dollar = 0
+    peak_at_max_dd = 100000
+    timestep_at_max_dd = 0
+
+    for checkpoint in history:
+        equity = checkpoint.get('equity', 100000)
+        timestep = checkpoint.get('timesteps', 0)
+
+        # Mettre à jour le peak si on atteint un nouveau sommet
+        if equity > peak:
+            peak = equity
+
+        # Calculer la perte depuis le peak
+        dd_dollar = peak - equity
+
+        # Garder le maximum
+        if dd_dollar > max_dd_dollar:
+            max_dd_dollar = dd_dollar
+            peak_at_max_dd = peak
+            timestep_at_max_dd = timestep
+
+    return {
+        'max_dd_dollar': max_dd_dollar,
+        'peak_equity_at_dd': peak_at_max_dd,
+        'timestep_at_dd': timestep_at_max_dd
     }
 
 def calculate_metrics(data):
@@ -187,14 +227,14 @@ def calculate_metrics(data):
     # Max Drawdown (déjà en pourcentage dans le JSON, NE PAS multiplier par 100)
     max_dd_pct = latest.get('max_drawdown_pct', 0)
 
-    # Calcul Max DD en dollars (basé sur l'equity actuelle)
+    # ⭐ CALCUL HEDGE FUND: Max DD $ HISTORIQUE (parcourt toute l'historique)
+    dd_info = calculate_real_max_dd_dollar(data)
+    max_dd_dollar = dd_info['max_dd_dollar']
+    peak_equity_at_dd = dd_info['peak_equity_at_dd']
+    timestep_at_dd = dd_info['timestep_at_dd']
+
+    # Equity actuelle (pour calcul de recovery)
     current_equity = latest.get('equity', 100000)
-    if max_dd_pct > 0:
-        # Le peak equity est l'equity actuelle divisée par (1 - DD%)
-        peak_equity = current_equity / (1 - max_dd_pct / 100)
-        max_dd_dollar = peak_equity - current_equity
-    else:
-        max_dd_dollar = 0
 
     # Calcul des streaks (séquences)
     streaks = calculate_streaks(all_trades)
@@ -221,6 +261,8 @@ def calculate_metrics(data):
         'cvar_95': cvar_95,
         'max_dd_pct': max_dd_pct,
         'max_dd_dollar': max_dd_dollar,
+        'peak_equity_at_dd': peak_equity_at_dd,  # ⭐ HEDGE FUND METRIC
+        'timestep_at_dd': timestep_at_dd,  # ⭐ HEDGE FUND METRIC
         'total_trades': total_trades,
         'win_rate': win_rate,
         'profit_factor': profit_factor,
@@ -304,38 +346,31 @@ def create_equity_curve(history):
     annotation_text = f"<b>🔴 Points rouges = Position ouverte ({positions_count}/{total_checkpoints} checkpoints, {positions_count/total_checkpoints*100:.1f}%)</b><br>Si lignes superposées = Pas de position à ce moment-là"
 
     fig.update_layout(
-        title={
-            'text': "Courbe d'Équité - Balance Réalisée vs Equity Totale",
-            'font': {'size': 18, 'color': 'white'},
-            'y': 0.95,  # Position verticale du titre (plus bas pour laisser place à légende)
-            'x': 0.5,
-            'xanchor': 'center',
-            'yanchor': 'top'
-        },
+        title="Courbe d'Équité - Balance Réalisée vs Equity Totale",  # TITRE SIMPLE
         xaxis_title="Timesteps",
         yaxis_title="Capital ($)",
         hovermode='closest',
         template='plotly_dark',
-        height=550,  # Encore plus haut pour faire de la place
-        margin=dict(t=120, b=80),  # MARGES: top=120px, bottom=80px
+        height=600,  # PLUS HAUT
+        margin=dict(t=100, b=120),  # MARGES: top réduit, bottom AUGMENTÉ pour annotation
         showlegend=True,
         legend=dict(
             yanchor="top",
-            y=1.20,  # Légèrement réduit (était 1.25) pour ne pas dépasser
+            y=1.15,  # RÉDUIT pour ne pas couper titre
             xanchor="left",
             x=0.01,
             bgcolor='rgba(0,0,0,0.9)',
             bordercolor='white',
             borderwidth=2,
-            font=dict(size=11, color='white')
+            font=dict(size=10, color='white')
         ),
         annotations=[
             dict(
                 text=annotation_text,
                 xref="paper", yref="paper",
-                x=0.5, y=-0.18,  # REMONTÉ (était -0.22) grâce à margin bottom
+                x=0.5, y=-0.15,  # PLUS HAUT grâce à margin bottom=120
                 showarrow=False,
-                font=dict(size=11, color='#AAAAAA', family='Arial'),  # GRIS MOYEN
+                font=dict(size=10, color='#999999', family='Arial'),  # GRIS PLUS CLAIR, PLUS PETIT
                 xanchor='center',
                 align='center'
             )
@@ -374,16 +409,16 @@ def create_drawdown_chart(history):
         yaxis_title="Max DD (%)",
         hovermode='x unified',
         template='plotly_dark',
-        height=550,  # Même hauteur que graphique equity
-        margin=dict(t=80, b=80),  # MARGES cohérentes
+        height=600,  # MÊME HAUTEUR
+        margin=dict(t=100, b=120),  # MARGES COHÉRENTES
         showlegend=True,
         annotations=[
             dict(
                 text="<b>⚠️ DD = (Peak - Current) / Peak</b>, PAS depuis $100K initial",
                 xref="paper", yref="paper",
-                x=0.5, y=-0.18,  # REMONTÉ grâce à margin bottom
+                x=0.5, y=-0.15,  # MÊME POSITION
                 showarrow=False,
-                font=dict(size=11, color='#AAAAAA', family='Arial'),  # GRIS MOYEN
+                font=dict(size=10, color='#999999', family='Arial'),  # GRIS PLUS CLAIR
                 xanchor='center'
             )
         ]
@@ -410,9 +445,10 @@ def create_sharpe_chart(history):
         marker=dict(size=4)
     ))
 
-    fig.add_hline(y=0, line_dash="dot", line_color="gray", annotation_text="Zero", line_width=1)
-    fig.add_hline(y=1.0, line_dash="dash", line_color="yellow", annotation_text="Target (1.0)", line_width=2)
-    fig.add_hline(y=1.5, line_dash="dash", line_color="green", annotation_text="Excellent (1.5)", line_width=2)
+    # Lignes de référence SANS annotation_text (plus propre)
+    fig.add_hline(y=0, line_dash="dot", line_color="gray", line_width=1)
+    fig.add_hline(y=1.0, line_dash="dash", line_color="yellow", line_width=2)
+    fig.add_hline(y=1.5, line_dash="dash", line_color="green", line_width=2)
 
     fig.update_layout(
         title="Sharpe Ratio Evolution",
@@ -420,8 +456,19 @@ def create_sharpe_chart(history):
         yaxis_title="Sharpe Ratio",
         hovermode='x unified',
         template='plotly_dark',
-        height=450,
-        showlegend=True
+        height=600,  # Plus haut pour avoir de la place
+        margin=dict(t=100, b=120),  # Marges pour annotation
+        showlegend=True,
+        annotations=[
+            dict(
+                text="<b>Lignes de référence :</b> Sharpe = 0 (neutre) | 1.0 (target) | 1.5+ (excellent hedge fund grade)",
+                xref="paper", yref="paper",
+                x=0.5, y=-0.15,
+                showarrow=False,
+                font=dict(size=10, color='#999999', family='Arial'),
+                xanchor='center'
+            )
+        ]
     )
 
     return fig
@@ -611,26 +658,28 @@ st.header("⚠️ Risk Management")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    # Calcul du peak equity pour l'afficher
+    # ⭐ HEDGE FUND: Peak equity au moment du max DD (historique)
+    peak_equity_at_dd = metrics['peak_equity_at_dd']
+    timestep_at_dd = metrics['timestep_at_dd']
     current_equity = metrics['equity']
-    if metrics['max_dd_pct'] > 0:
-        peak_equity = current_equity / (1 - metrics['max_dd_pct'] / 100)
-    else:
-        peak_equity = current_equity
 
     dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
     st.metric(
-        label=f"Max DD % (Peak: ${peak_equity:,.0f})",
+        label=f"Max DD % (Peak: ${peak_equity_at_dd:,.0f})",
         value=f"{metrics['max_dd_pct']:.2f}%",
         delta=dd_status,
-        help="⚠️ DD = (Peak - Current) / Peak * 100. Peak = point le plus haut atteint, PAS le capital initial $100K"
+        help=f"⚠️ DD = (Peak - Equity) / Peak * 100\n\nPeak atteint: ${peak_equity_at_dd:,.0f} (timestep {timestep_at_dd:,})\nMax DD s'est produit à ce point\nCurrent Equity: ${current_equity:,.0f}"
     )
 
 with col2:
+    # ⭐ HEDGE FUND: VRAI Max DD $ historique (pas projeté)
+    recovery_pct = ((current_equity - (peak_equity_at_dd - metrics['max_dd_dollar'])) / metrics['max_dd_dollar']) * 100 if metrics['max_dd_dollar'] > 0 else 0
+
     st.metric(
-        label="Max DD ($)",
+        label="Max DD ($) - Hedge Fund",
         value=f"${metrics['max_dd_dollar']:,.2f}",
-        help=f"Perte max en $ depuis le peak (${peak_equity:,.0f})"
+        delta=f"Recovery: +{recovery_pct:.0f}%" if recovery_pct > 0 else "No recovery",
+        help=f"💰 VRAI Max DD historique (Hedge Fund method)\n\nPerte max: ${metrics['max_dd_dollar']:,.0f}\nDepuis peak: ${peak_equity_at_dd:,.0f}\nAu timestep: {timestep_at_dd:,}\n\nCurrent Equity: ${current_equity:,.0f}\nRecovery: +{recovery_pct:.0f}% depuis le creux"
     )
 
 with col3:
@@ -785,9 +834,11 @@ with st.expander("📊 Statistiques Détaillées Complètes", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.markdown("**⚠️ Drawdown Metrics**")
+        st.markdown("**⚠️ Drawdown Metrics (Hedge Fund Grade)**")
         st.markdown(f"- **Max DD %**: {metrics['max_dd_pct']:.2f}%")
         st.markdown(f"- **Max DD $**: ${metrics['max_dd_dollar']:,.2f}")
+        st.markdown(f"- **Peak at DD**: ${metrics['peak_equity_at_dd']:,.0f}")
+        st.markdown(f"- **Timestep at DD**: {metrics['timestep_at_dd']:,}")
         dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
         st.markdown(f"- **FTMO Status**: {dd_status}")
         st.markdown(f"- **Recovery Factor**: {metrics['recovery_factor']:.2f}")
