@@ -290,20 +290,20 @@ def create_equity_curve(history):
         showlegend=True,
         legend=dict(
             yanchor="top",
-            y=0.99,
+            y=1.15,  # AU-DESSUS du graphique (hors de la zone de tracé)
             xanchor="left",
             x=0.01,
-            bgcolor='rgba(0,0,0,0.5)',
+            bgcolor='rgba(0,0,0,0.8)',
             bordercolor='white',
-            borderwidth=1,
-            font=dict(size=12)
+            borderwidth=2,
+            font=dict(size=13, color='white')
         )
     )
 
     return fig
 
 def create_drawdown_chart(history):
-    """Crée le graphique de drawdown"""
+    """Crée le graphique de drawdown (calculé depuis le peak equity, pas $100K initial)"""
     # Trier les données par timesteps
     sorted_history = sorted(history, key=lambda h: h.get('timesteps', 0))
 
@@ -320,19 +320,29 @@ def create_drawdown_chart(history):
         line=dict(color='#FF6B6B', width=3),
         marker=dict(size=4),
         fill='tozeroy',
-        fillcolor='rgba(255, 107, 107, 0.2)'
+        fillcolor='rgba(255, 107, 107, 0.2)',
+        hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Max DD</b>: %{y:.2f}%<br><i>(depuis le peak equity)</i><extra></extra>'
     ))
 
     fig.add_hline(y=10, line_dash="dash", line_color="red", annotation_text="FTMO Limit (10%)", line_width=2)
 
     fig.update_layout(
-        title="Maximum Drawdown",
+        title="Maximum Drawdown (depuis Peak Equity)",
         xaxis_title="Timesteps",
         yaxis_title="Max DD (%)",
         hovermode='x unified',
         template='plotly_dark',
         height=450,
-        showlegend=True
+        showlegend=True,
+        annotations=[
+            dict(
+                text="<i>⚠️ DD = (Peak - Current) / Peak, PAS depuis $100K initial</i>",
+                xref="paper", yref="paper",
+                x=0.5, y=-0.12,
+                showarrow=False,
+                font=dict(size=10, color='#FFD700')
+            )
+        ]
     )
 
     return fig
@@ -557,17 +567,26 @@ st.header("⚠️ Risk Management")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    dd_status = "✅ OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
+    # Calcul du peak equity pour l'afficher
+    current_equity = metrics['equity']
+    if metrics['max_dd_pct'] > 0:
+        peak_equity = current_equity / (1 - metrics['max_dd_pct'] / 100)
+    else:
+        peak_equity = current_equity
+
+    dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
     st.metric(
-        label="Max DD (%)",
+        label=f"Max DD % (Peak: ${peak_equity:,.0f})",
         value=f"{metrics['max_dd_pct']:.2f}%",
-        delta=dd_status
+        delta=dd_status,
+        help="⚠️ DD = (Peak - Current) / Peak * 100. Peak = point le plus haut atteint, PAS le capital initial $100K"
     )
 
 with col2:
     st.metric(
         label="Max DD ($)",
-        value=f"${metrics['max_dd_dollar']:,.2f}"
+        value=f"${metrics['max_dd_dollar']:,.2f}",
+        help=f"Perte max en $ depuis le peak (${peak_equity:,.0f})"
     )
 
 with col3:
