@@ -46,16 +46,27 @@ def load_data():
 
 def calculate_metrics(data):
     """Calcule toutes les métriques depuis les données"""
-    if not data or not data['history']:
+    # Vérification robuste de la structure des données
+    if not data:
         return None
 
-    latest = data['history'][-1]
+    # Le JSON est un tableau de checkpoints, pas un objet avec 'history'
+    if not isinstance(data, list):
+        st.error(f"❌ Format de données invalide. Type attendu: list, Type reçu: {type(data)}")
+        return None
+
+    if len(data) == 0:
+        st.warning("⚠️ Aucun checkpoint - training pas encore démarré")
+        return None
+
+    # Le dernier checkpoint
+    latest = data[-1]
 
     # Récupération des trades uniques
     all_trades = []
     seen_trades = set()
 
-    for checkpoint in data['history']:
+    for checkpoint in data:
         for trade in checkpoint.get('trades', []):
             # Clé unique pour déduplication
             key = (
@@ -109,11 +120,11 @@ def calculate_metrics(data):
     sharpe = latest.get('sharpe_ratio', 0)
 
     # Max Drawdown
-    max_dd_pct = latest.get('max_dd_pct', 0) * 100
-    max_dd_dollar = latest.get('max_dd', 0)
+    max_dd_pct = latest.get('max_drawdown_pct', 0) * 100
+    max_dd_dollar = (100000 * max_dd_pct / 100) if max_dd_pct > 0 else 0
 
     return {
-        'timesteps': latest['timestep'],
+        'timesteps': latest.get('timesteps', 0),
         'equity': latest['equity'],
         'total_pnl': total_pnl,
         'pnl_method': pnl_method,
@@ -132,13 +143,13 @@ def calculate_metrics(data):
         'winning_trades': len(winning_trades),
         'losing_trades': len(losing_trades),
         'all_trades': all_trades,
-        'history': data['history']
+        'history': data  # data est déjà le tableau complet de checkpoints
     }
 
 def create_equity_curve(history):
     """Crée la courbe d'équité"""
-    timesteps = [h['timestep'] for h in history]
-    equity = [h['equity'] for h in history]
+    timesteps = [h.get('timesteps', 0) for h in history]
+    equity = [h.get('equity', 100000) for h in history]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -164,8 +175,8 @@ def create_equity_curve(history):
 
 def create_drawdown_chart(history):
     """Crée le graphique de drawdown"""
-    timesteps = [h['timestep'] for h in history]
-    dd_pct = [h.get('max_dd_pct', 0) * 100 for h in history]
+    timesteps = [h.get('timesteps', 0) for h in history]
+    dd_pct = [h.get('max_drawdown_pct', 0) * 100 for h in history]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -192,7 +203,7 @@ def create_drawdown_chart(history):
 
 def create_sharpe_chart(history):
     """Crée le graphique du Sharpe Ratio"""
-    timesteps = [h['timestep'] for h in history]
+    timesteps = [h.get('timesteps', 0) for h in history]
     sharpe = [h.get('sharpe_ratio', 0) for h in history]
 
     fig = go.Figure()
