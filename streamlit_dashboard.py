@@ -110,21 +110,28 @@ def calculate_streaks(trades):
         'current_streak_type': '✅ Gains' if current_type == 'win' else ('❌ Pertes' if current_type == 'loss' else 'N/A')
     }
 
-def calculate_real_max_dd_dollar(history):
+def calculate_real_max_dd_unified(history):
     """
-    Calcule le VRAI Max DD en $ comme les hedge funds
-    = La plus grande perte en $ depuis un peak HISTORIQUE
+    Calcule le VRAI Max DD (% ET $) comme les hedge funds
+    = La plus grande perte depuis un peak HISTORIQUE
+
+    ⚠️ IMPORTANT: Parcourt TOUTE l'historique pour trouver le vrai max DD,
+    pas juste le dernier checkpoint (qui peut avoir récupéré depuis le max DD)
 
     Returns:
         dict: {
+            'max_dd_pct': float,  # Perte max en % depuis peak
             'max_dd_dollar': float,  # Perte max en $ depuis peak
             'peak_equity_at_dd': float,  # Equity au peak avant le DD
+            'equity_at_dd': float,  # Equity au point le plus bas (trough)
             'timestep_at_dd': int  # Timestep où le max DD s'est produit
         }
     """
     peak = 100000  # Capital initial
     max_dd_dollar = 0
+    max_dd_pct = 0
     peak_at_max_dd = 100000
+    equity_at_max_dd = 100000
     timestep_at_max_dd = 0
 
     for checkpoint in history:
@@ -135,18 +142,23 @@ def calculate_real_max_dd_dollar(history):
         if equity > peak:
             peak = equity
 
-        # Calculer la perte depuis le peak
+        # Calculer la perte depuis le peak (en $ et en %)
         dd_dollar = peak - equity
+        dd_pct = (dd_dollar / peak * 100) if peak > 0 else 0
 
-        # Garder le maximum
+        # Garder le maximum (en $, le % suivra automatiquement)
         if dd_dollar > max_dd_dollar:
             max_dd_dollar = dd_dollar
+            max_dd_pct = dd_pct
             peak_at_max_dd = peak
+            equity_at_max_dd = equity
             timestep_at_max_dd = timestep
 
     return {
+        'max_dd_pct': max_dd_pct,
         'max_dd_dollar': max_dd_dollar,
         'peak_equity_at_dd': peak_at_max_dd,
+        'equity_at_dd': equity_at_max_dd,
         'timestep_at_dd': timestep_at_max_dd
     }
 
@@ -224,13 +236,14 @@ def calculate_metrics(data):
     var_95 = institutional_metrics.get('var_95', 0) * 100  # Convertir en %
     cvar_95 = institutional_metrics.get('cvar_95', 0) * 100  # Convertir en %
 
-    # Max Drawdown (déjà en pourcentage dans le JSON, NE PAS multiplier par 100)
-    max_dd_pct = latest.get('max_drawdown_pct', 0)
-
-    # ⭐ CALCUL HEDGE FUND: Max DD $ HISTORIQUE (parcourt toute l'historique)
-    dd_info = calculate_real_max_dd_dollar(data)
+    # ⭐ CALCUL HEDGE FUND: Max DD (% ET $) HISTORIQUE UNIFIÉ
+    # Parcourt TOUTE l'historique pour trouver le vrai max DD
+    # (PAS juste le dernier checkpoint qui peut avoir récupéré)
+    dd_info = calculate_real_max_dd_unified(data)
+    max_dd_pct = dd_info['max_dd_pct']
     max_dd_dollar = dd_info['max_dd_dollar']
     peak_equity_at_dd = dd_info['peak_equity_at_dd']
+    equity_at_dd = dd_info['equity_at_dd']
     timestep_at_dd = dd_info['timestep_at_dd']
 
     # Equity actuelle (pour calcul de recovery)
@@ -261,8 +274,9 @@ def calculate_metrics(data):
         'cvar_95': cvar_95,
         'max_dd_pct': max_dd_pct,
         'max_dd_dollar': max_dd_dollar,
-        'peak_equity_at_dd': peak_equity_at_dd,  # ⭐ HEDGE FUND METRIC
-        'timestep_at_dd': timestep_at_dd,  # ⭐ HEDGE FUND METRIC
+        'peak_equity_at_dd': peak_equity_at_dd,  # ⭐ HEDGE FUND: Equity au peak
+        'equity_at_dd': equity_at_dd,  # ⭐ HEDGE FUND: Equity au trough (point bas)
+        'timestep_at_dd': timestep_at_dd,  # ⭐ HEDGE FUND: Timestep du max DD
         'total_trades': total_trades,
         'win_rate': win_rate,
         'profit_factor': profit_factor,
@@ -356,7 +370,7 @@ def create_equity_curve(history):
         showlegend=True,
         legend=dict(
             yanchor="top",
-            y=0.98,  # EN HAUT À DROITE - à l'intérieur du graphique
+            y=1.15,  # TRÈS AU-DESSUS du graphique (en dehors)
             xanchor="right",
             x=0.99,  # DROITE
             bgcolor='rgba(0,0,0,0.9)',
@@ -658,28 +672,29 @@ st.header("⚠️ Risk Management")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    # ⭐ HEDGE FUND: Peak equity au moment du max DD (historique)
+    # ⭐ HEDGE FUND: Peak equity et trough au moment du max DD (historique)
     peak_equity_at_dd = metrics['peak_equity_at_dd']
+    equity_at_dd = metrics['equity_at_dd']
     timestep_at_dd = metrics['timestep_at_dd']
     current_equity = metrics['equity']
 
     dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
     st.metric(
-        label=f"Max DD % (Peak: ${peak_equity_at_dd:,.0f})",
+        label=f"Max DD % (${peak_equity_at_dd:,.0f} → ${equity_at_dd:,.0f})",
         value=f"{metrics['max_dd_pct']:.2f}%",
         delta=dd_status,
-        help=f"⚠️ DD = (Peak - Equity) / Peak * 100\n\nPeak atteint: ${peak_equity_at_dd:,.0f} (timestep {timestep_at_dd:,})\nMax DD s'est produit à ce point\nCurrent Equity: ${current_equity:,.0f}"
+        help=f"⚠️ DD = (Peak - Trough) / Peak * 100\n\nPeak: ${peak_equity_at_dd:,.0f}\nTrough: ${equity_at_dd:,.0f}\nPerte: ${metrics['max_dd_dollar']:,.0f}\n\nTimestep: {timestep_at_dd:,}\nCurrent Equity: ${current_equity:,.0f}"
     )
 
 with col2:
     # ⭐ HEDGE FUND: VRAI Max DD $ historique (pas projeté)
-    recovery_pct = ((current_equity - (peak_equity_at_dd - metrics['max_dd_dollar'])) / metrics['max_dd_dollar']) * 100 if metrics['max_dd_dollar'] > 0 else 0
+    recovery_pct = ((current_equity - equity_at_dd) / metrics['max_dd_dollar']) * 100 if metrics['max_dd_dollar'] > 0 else 0
 
     st.metric(
-        label="Max DD ($) - Hedge Fund",
+        label=f"Max DD $ (${peak_equity_at_dd:,.0f} → ${equity_at_dd:,.0f})",
         value=f"${metrics['max_dd_dollar']:,.2f}",
         delta=f"Recovery: +{recovery_pct:.0f}%" if recovery_pct > 0 else "No recovery",
-        help=f"💰 VRAI Max DD historique (Hedge Fund method)\n\nPerte max: ${metrics['max_dd_dollar']:,.0f}\nDepuis peak: ${peak_equity_at_dd:,.0f}\nAu timestep: {timestep_at_dd:,}\n\nCurrent Equity: ${current_equity:,.0f}\nRecovery: +{recovery_pct:.0f}% depuis le creux"
+        help=f"💰 VRAI Max DD historique (Hedge Fund method)\n\nPeak: ${peak_equity_at_dd:,.0f}\nTrough: ${equity_at_dd:,.0f}\nPerte: ${metrics['max_dd_dollar']:,.0f}\n\nTimestep: {timestep_at_dd:,}\nCurrent Equity: ${current_equity:,.0f}\nRecovery: +{recovery_pct:.0f}% depuis le creux"
     )
 
 with col3:
@@ -837,7 +852,7 @@ with st.expander("📊 Statistiques Détaillées Complètes", expanded=True):
         st.markdown("**⚠️ Drawdown Metrics (Hedge Fund Grade)**")
         st.markdown(f"- **Max DD %**: {metrics['max_dd_pct']:.2f}%")
         st.markdown(f"- **Max DD $**: ${metrics['max_dd_dollar']:,.2f}")
-        st.markdown(f"- **Peak at DD**: ${metrics['peak_equity_at_dd']:,.0f}")
+        st.markdown(f"- **Peak → Trough**: ${metrics['peak_equity_at_dd']:,.0f} → ${metrics['equity_at_dd']:,.0f}")
         st.markdown(f"- **Timestep at DD**: {metrics['timestep_at_dd']:,}")
         dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
         st.markdown(f"- **FTMO Status**: {dd_status}")
