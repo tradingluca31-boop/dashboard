@@ -158,33 +158,54 @@ def calculate_metrics(data):
     }
 
 def create_equity_curve(history):
-    """Crée la courbe d'équité"""
+    """Crée la courbe d'équité avec Balance (réalisé) et Equity (avec positions flottantes)"""
     # Trier les données par timesteps pour assurer une courbe propre
     sorted_history = sorted(history, key=lambda h: h.get('timesteps', 0))
 
     timesteps = [h.get('timesteps', 0) for h in sorted_history]
+    balance = [h.get('balance', 100000) for h in sorted_history]
     equity = [h.get('equity', 100000) for h in sorted_history]
 
     fig = go.Figure()
+
+    # Balance (positions fermées uniquement)
+    fig.add_trace(go.Scatter(
+        x=timesteps,
+        y=balance,
+        mode='lines+markers',
+        name='Balance (Réalisé)',
+        line=dict(color='#00D9FF', width=3),
+        marker=dict(size=4),
+        hovertemplate='<b>Timestep</b>: %{x}<br><b>Balance</b>: $%{y:,.2f}<extra></extra>'
+    ))
+
+    # Equity (avec positions flottantes) - ligne plus fine et transparente
     fig.add_trace(go.Scatter(
         x=timesteps,
         y=equity,
-        mode='lines+markers',
-        name='Equity',
-        line=dict(color='#00D9FF', width=3),
-        marker=dict(size=4)
+        mode='lines',
+        name='Equity (+ Flottant)',
+        line=dict(color='#FFA500', width=1, dash='dot'),
+        opacity=0.5,
+        hovertemplate='<b>Timestep</b>: %{x}<br><b>Equity</b>: $%{y:,.2f}<extra></extra>'
     ))
 
-    fig.add_hline(y=100000, line_dash="dash", line_color="gray", annotation_text="Initial Capital", line_width=2)
+    fig.add_hline(y=100000, line_dash="dash", line_color="gray", annotation_text="Initial Capital ($100,000)", line_width=2)
 
     fig.update_layout(
-        title="Courbe d'Équité",
+        title="Courbe d'Équité - Balance (Réalisé) vs Equity (+ Positions Flottantes)",
         xaxis_title="Timesteps",
-        yaxis_title="Equity ($)",
+        yaxis_title="Montant ($)",
         hovermode='x unified',
         template='plotly_dark',
         height=450,
-        showlegend=True
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        )
     )
 
     return fig
