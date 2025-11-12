@@ -13,6 +13,9 @@ from plotly.subplots import make_subplots
 from pathlib import Path
 import time
 from datetime import datetime
+import numpy as np
+import warnings
+warnings.filterwarnings('ignore')
 
 # Configuration de la page
 st.set_page_config(
@@ -66,6 +69,130 @@ def load_top_features():
                 return None
 
     return None
+
+
+def load_model_feature_importance():
+    """
+    🔴 LIVE: Charge le modèle RL actuel et extrait l'importance réelle des features
+
+    Méthode professionnelle (Hedge Fund Grade):
+    1. Charge best_model.zip (modèle en cours de training)
+    2. Extrait les poids de la première couche du policy network
+    3. Calcule l'importance absolue moyenne pour chaque feature
+    4. Classe par importance décroissante
+
+    Returns:
+        tuple: (features_list, is_live, timestamp, error_msg, importance_scores)
+            - features_list: Liste des features classées par importance
+            - is_live: True si analyse du modèle réussie, False si fallback statique
+            - timestamp: datetime de l'analyse
+            - error_msg: Message d'erreur si échec, None sinon
+            - importance_scores: Dict {feature: score} ou None
+    """
+    analysis_time = datetime.now()
+
+    # Chemins possibles pour le modèle (ordre de priorité)
+    model_paths = [
+        Path("C:/Users/lbye3/Desktop/GoldRL/AGENT/AGENT 7/ENTRAINEMENT/models/best_model.zip"),
+        Path(__file__).parent / "models" / "best_model.zip",
+        Path("C:/Users/lbye3/Desktop/GoldRL/AGENT/AGENT 7/ENTRAINEMENT/models/agent7_1.5M_final.zip"),
+    ]
+
+    # Chercher le modèle
+    model_path = None
+    for path in model_paths:
+        if path.exists():
+            model_path = path
+            break
+
+    if not model_path:
+        return (None, False, analysis_time,
+                "❌ Aucun modèle trouvé (best_model.zip ou agent7_1.5M_final.zip)",
+                None)
+
+    # Charger les noms de features depuis le fichier statique (pour le mapping)
+    static_features = load_top_features()
+    if not static_features:
+        return (None, False, analysis_time,
+                "❌ Fichier top100_features_agent7.txt introuvable (nécessaire pour noms features)",
+                None)
+
+    try:
+        # Tentative d'import de stable-baselines3
+        try:
+            from stable_baselines3 import PPO
+        except ImportError:
+            return (static_features, False, analysis_time,
+                    "⚠️ stable-baselines3 non disponible - Affichage features statiques",
+                    None)
+
+        # Charger le modèle PPO
+        try:
+            model = PPO.load(str(model_path))
+        except Exception as e:
+            return (static_features, False, analysis_time,
+                    f"⚠️ Erreur chargement modèle: {str(e)[:100]}",
+                    None)
+
+        # Extraire les poids de la première couche du policy network
+        try:
+            # PPO utilise MlpPolicy avec architecture [obs_dim] -> [512] -> [512] -> [action_dim]
+            # On veut les poids de la première couche: [obs_dim, 512]
+            policy_net = model.policy.mlp_extractor.policy_net
+
+            # Premier layer weights: shape = [n_features, 512]
+            first_layer_weights = policy_net[0].weight.data.cpu().numpy()  # Shape: [512, n_features]
+            first_layer_weights = first_layer_weights.T  # Transpose: [n_features, 512]
+
+            # Calculer l'importance: moyenne des valeurs absolues sur tous les neurones
+            # Plus le poids est élevé (en absolu), plus la feature est importante
+            feature_importance = np.abs(first_layer_weights).mean(axis=1)  # Shape: [n_features]
+
+            # Vérifier cohérence dimensions
+            if len(feature_importance) != len(static_features):
+                return (static_features, False, analysis_time,
+                        f"⚠️ Incohérence dimensions: {len(feature_importance)} poids vs {len(static_features)} features",
+                        None)
+
+            # Créer le dictionnaire {feature_name: importance_score}
+            importance_dict = {
+                feature: float(score)
+                for feature, score in zip(static_features, feature_importance)
+            }
+
+            # Trier par importance décroissante
+            sorted_features = sorted(
+                importance_dict.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+
+            # Extraire juste les noms de features (sans les scores pour l'affichage)
+            live_features_sorted = [feature for feature, score in sorted_features]
+
+            # Normaliser les scores pour affichage (0-100)
+            max_importance = max(importance_dict.values())
+            importance_dict_normalized = {
+                feature: (score / max_importance) * 100
+                for feature, score in importance_dict.items()
+            }
+
+            return (live_features_sorted, True, analysis_time, None, importance_dict_normalized)
+
+        except AttributeError as e:
+            return (static_features, False, analysis_time,
+                    f"⚠️ Architecture modèle inattendue: {str(e)[:100]}",
+                    None)
+        except Exception as e:
+            return (static_features, False, analysis_time,
+                    f"⚠️ Erreur extraction poids: {str(e)[:100]}",
+                    None)
+
+    except Exception as e:
+        # Catch-all pour erreurs inattendues
+        return (static_features, False, analysis_time,
+                f"⚠️ Erreur inattendue: {str(e)[:100]}",
+                None)
 
 def calculate_streaks(trades):
     """Calcule les séquences (streaks) de gains/pertes consécutifs"""
@@ -963,11 +1090,27 @@ def get_feature_emoji(feature):
     else:
         return "🔹"
 
-top_features = load_top_features()
+# Charger l'importance des features (LIVE si possible, sinon fallback STATIC)
+features_list, is_live, analysis_timestamp, error_msg, importance_scores = load_model_feature_importance()
+
+# Fallback si échec total
+if features_list is None:
+    features_list = load_top_features()
+    is_live = False
+
+top_features = features_list
 
 if top_features:
-    st.success(f"✅ **{len(top_features)} features** utilisées par l'agent RL (classement par importance SHAP)")
-    st.info("**📌 Note**: Les features sont triées par importance - Les premières ont le PLUS d'impact, les dernières le MOINS.")
+    # Indicateur LIVE vs STATIC
+    if is_live:
+        st.success(f"🔴 **LIVE**: {len(top_features)} features classées par importance RÉELLE du modèle actuel")
+        st.info(f"⏰ **Analysé**: {analysis_timestamp.strftime('%Y-%m-%d %H:%M:%S')} | 🤖 **Modèle**: best_model.zip")
+        st.info("**📊 Méthode**: Analyse des poids de la première couche du policy network (PPO) - Les features avec les poids moyens les plus élevés ont le PLUS d'impact sur les décisions de l'agent.")
+    else:
+        st.warning(f"📁 **STATIC**: {len(top_features)} features depuis classement SHAP pré-entraînement")
+        if error_msg:
+            st.info(f"ℹ️ **Raison**: {error_msg}")
+        st.info("**📌 Note**: Classement théorique basé sur SHAP - Pour voir l'importance RÉELLE du modèle en cours, assurez-vous que stable-baselines3 est installé et que best_model.zip existe.")
 
     # TOP 10 BEST FEATURES (les plus importantes)
     st.markdown("---")
@@ -978,12 +1121,20 @@ if top_features:
     with col1:
         for i, feature in enumerate(top_features[:5], 1):
             emoji = get_feature_emoji(feature)
-            st.markdown(f"**#{i}** {emoji} `{feature}`")
+            if is_live and importance_scores:
+                score = importance_scores.get(feature, 0)
+                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+            else:
+                st.markdown(f"**#{i}** {emoji} `{feature}`")
 
     with col2:
         for i, feature in enumerate(top_features[5:10], 6):
             emoji = get_feature_emoji(feature)
-            st.markdown(f"**#{i}** {emoji} `{feature}`")
+            if is_live and importance_scores:
+                score = importance_scores.get(feature, 0)
+                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+            else:
+                st.markdown(f"**#{i}** {emoji} `{feature}`")
 
     # TOP 10 WORST FEATURES (les moins importantes)
     st.markdown("---")
@@ -997,12 +1148,20 @@ if top_features:
         with col1:
             for i, feature in enumerate(worst_features[:5], len(top_features)-9):
                 emoji = get_feature_emoji(feature)
-                st.markdown(f"**#{i}** {emoji} `{feature}`")
+                if is_live and importance_scores:
+                    score = importance_scores.get(feature, 0)
+                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+                else:
+                    st.markdown(f"**#{i}** {emoji} `{feature}`")
 
         with col2:
             for i, feature in enumerate(worst_features[5:], len(top_features)-4):
                 emoji = get_feature_emoji(feature)
-                st.markdown(f"**#{i}** {emoji} `{feature}`")
+                if is_live and importance_scores:
+                    score = importance_scores.get(feature, 0)
+                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+                else:
+                    st.markdown(f"**#{i}** {emoji} `{feature}`")
     else:
         st.warning("Pas assez de features pour afficher le TOP 10 WORST")
 
