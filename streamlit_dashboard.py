@@ -393,9 +393,10 @@ def calculate_metrics(data):
     win_rate = trading_stats.get('win_rate', 0)
     profit_factor = trading_stats.get('profit_factor', 0)
 
-    # Avg Win/Loss depuis JSON (DOIVENT être normalisés - multipliés par 100 dans le JSON)
-    avg_win = trading_stats.get('avg_win', 0) / PNL_MULTIPLIER
-    avg_loss = trading_stats.get('avg_loss', 0) / PNL_MULTIPLIER
+    # Avg Win/Loss depuis JSON (DÉJÀ EN DOLLARS - PAS de division nécessaire)
+    # FIX 2025-11-12: Les valeurs dans trading_stats sont déjà en $, pas multipliées par 100
+    avg_win = trading_stats.get('avg_win', 0)  # Déjà en dollars (ex: 360.90)
+    avg_loss = trading_stats.get('avg_loss', 0)  # Déjà en dollars (ex: 372.58)
 
     # Max Win/Loss calculés depuis les trades (normalisation appliquée)
     max_win = max([normalize_pnl(t['pnl']) for t in winning_trades], default=0)
@@ -1166,14 +1167,16 @@ if top_features:
             st.info(f"ℹ️ **Raison**: {error_msg}")
         st.info("**📌 Note**: Classement théorique basé sur SHAP (top 100 seulement) - Pour voir l'importance RÉELLE de TOUTES les features du modèle en cours, assurez-vous que stable-baselines3 est installé et que best_model.zip existe.")
 
-    # TOP 10 BEST FEATURES (les plus importantes)
+    # TOP 50 BEST FEATURES (les plus importantes)
     st.markdown("---")
-    st.subheader("🏆 TOP 10 BEST FEATURES (Plus d'Impact)")
+    st.subheader("🏆 TOP 50 BEST FEATURES (Plus d'Impact)")
 
-    col1, col2 = st.columns(2)
+    # 5 colonnes de 10 features chacune
+    col1, col2, col3, col4, col5 = st.columns(5)
 
+    # Colonne 1: #1-10
     with col1:
-        for i, feature in enumerate(top_features[:5], 1):
+        for i, feature in enumerate(top_features[:10], 1):
             emoji = get_feature_emoji(feature)
             if is_live and importance_scores:
                 score = importance_scores.get(feature, 0)
@@ -1181,8 +1184,9 @@ if top_features:
             else:
                 st.markdown(f"**#{i}** {emoji} `{feature}`")
 
+    # Colonne 2: #11-20
     with col2:
-        for i, feature in enumerate(top_features[5:10], 6):
+        for i, feature in enumerate(top_features[10:20], 11):
             emoji = get_feature_emoji(feature)
             if is_live and importance_scores:
                 score = importance_scores.get(feature, 0)
@@ -1190,17 +1194,50 @@ if top_features:
             else:
                 st.markdown(f"**#{i}** {emoji} `{feature}`")
 
-    # TOP 10 WORST FEATURES (les moins importantes)
+    # Colonne 3: #21-30
+    with col3:
+        for i, feature in enumerate(top_features[20:30], 21):
+            emoji = get_feature_emoji(feature)
+            if is_live and importance_scores:
+                score = importance_scores.get(feature, 0)
+                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+            else:
+                st.markdown(f"**#{i}** {emoji} `{feature}`")
+
+    # Colonne 4: #31-40
+    with col4:
+        for i, feature in enumerate(top_features[30:40], 31):
+            emoji = get_feature_emoji(feature)
+            if is_live and importance_scores:
+                score = importance_scores.get(feature, 0)
+                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+            else:
+                st.markdown(f"**#{i}** {emoji} `{feature}`")
+
+    # Colonne 5: #41-50
+    with col5:
+        for i, feature in enumerate(top_features[40:50], 41):
+            emoji = get_feature_emoji(feature)
+            if is_live and importance_scores:
+                score = importance_scores.get(feature, 0)
+                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+            else:
+                st.markdown(f"**#{i}** {emoji} `{feature}`")
+
+    # TOP 50 WORST FEATURES (les moins importantes)
     st.markdown("---")
-    st.subheader("⚠️ TOP 10 WORST FEATURES (Moins d'Impact)")
+    st.subheader("⚠️ TOP 50 WORST FEATURES (Moins d'Impact)")
 
-    if len(top_features) >= 10:
-        col1, col2 = st.columns(2)
+    if len(top_features) >= 50:
+        # 5 colonnes de 10 features chacune
+        col1, col2, col3, col4, col5 = st.columns(5)
 
-        worst_features = top_features[-10:]
+        worst_features = top_features[-50:]
+        start_idx = len(top_features) - 50 + 1  # Index de départ pour énumération
 
+        # Colonne 1: derniers 50-41
         with col1:
-            for i, feature in enumerate(worst_features[:5], len(top_features)-9):
+            for i, feature in enumerate(worst_features[:10], start_idx):
                 emoji = get_feature_emoji(feature)
                 if is_live and importance_scores:
                     score = importance_scores.get(feature, 0)
@@ -1208,8 +1245,39 @@ if top_features:
                 else:
                     st.markdown(f"**#{i}** {emoji} `{feature}`")
 
+        # Colonne 2: derniers 40-31
         with col2:
-            for i, feature in enumerate(worst_features[5:], len(top_features)-4):
+            for i, feature in enumerate(worst_features[10:20], start_idx+10):
+                emoji = get_feature_emoji(feature)
+                if is_live and importance_scores:
+                    score = importance_scores.get(feature, 0)
+                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+                else:
+                    st.markdown(f"**#{i}** {emoji} `{feature}`")
+
+        # Colonne 3: derniers 30-21
+        with col3:
+            for i, feature in enumerate(worst_features[20:30], start_idx+20):
+                emoji = get_feature_emoji(feature)
+                if is_live and importance_scores:
+                    score = importance_scores.get(feature, 0)
+                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+                else:
+                    st.markdown(f"**#{i}** {emoji} `{feature}`")
+
+        # Colonne 4: derniers 20-11
+        with col4:
+            for i, feature in enumerate(worst_features[30:40], start_idx+30):
+                emoji = get_feature_emoji(feature)
+                if is_live and importance_scores:
+                    score = importance_scores.get(feature, 0)
+                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
+                else:
+                    st.markdown(f"**#{i}** {emoji} `{feature}`")
+
+        # Colonne 5: derniers 10-1 (les PIRES)
+        with col5:
+            for i, feature in enumerate(worst_features[40:50], start_idx+40):
                 emoji = get_feature_emoji(feature)
                 if is_live and importance_scores:
                     score = importance_scores.get(feature, 0)
@@ -1217,7 +1285,34 @@ if top_features:
                 else:
                     st.markdown(f"**#{i}** {emoji} `{feature}`")
     else:
-        st.warning("Pas assez de features pour afficher le TOP 10 WORST")
+        st.warning(f"Pas assez de features pour afficher le TOP 50 WORST (seulement {len(top_features)} features disponibles)")
+
+    # FEATURES INUTILISÉES (score < 5.0 en mode LIVE)
+    st.markdown("---")
+    if is_live and importance_scores:
+        # Filtrer les features avec score très faible (< 5.0)
+        UNUSED_THRESHOLD = 5.0
+        unused_features = [(f, importance_scores.get(f, 0)) for f in top_features if importance_scores.get(f, 0) < UNUSED_THRESHOLD]
+
+        if unused_features:
+            st.subheader(f"🚫 FEATURES INUTILISÉES (Score < {UNUSED_THRESHOLD:.1f}) - {len(unused_features)} trouvées")
+            st.warning(f"⚠️ Ces features ont un impact quasi-nul sur les décisions de l'agent. Elles pourraient être retirées pour simplifier le modèle.")
+
+            # Afficher en 4 colonnes
+            num_cols = 4
+            cols = st.columns(num_cols)
+
+            for idx, (feature, score) in enumerate(unused_features):
+                col_idx = idx % num_cols
+                with cols[col_idx]:
+                    emoji = get_feature_emoji(feature)
+                    # Trouver le rang global
+                    rank = top_features.index(feature) + 1
+                    st.markdown(f"**#{rank}** {emoji} `{feature}` - **{score:.2f}**")
+        else:
+            st.success(f"✅ Aucune feature inutilisée (toutes ont un score ≥ {UNUSED_THRESHOLD:.1f})")
+    else:
+        st.info("ℹ️ **Mode LIVE requis** : Cette section nécessite l'analyse du modèle (best_model.zip). Disponible uniquement en local avec `streamlit run streamlit_dashboard.py`")
 
     # TOUTES LES FEATURES (dans un expander)
     st.markdown("---")
