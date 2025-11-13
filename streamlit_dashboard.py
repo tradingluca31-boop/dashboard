@@ -797,45 +797,63 @@ with st.sidebar:
     if st.button("🔄 Rafraîchir maintenant"):
         st.rerun()
 
-# === FILE UPLOADER POUR ZIP ===
+# === FILE UPLOADER POUR ZIP (TOUJOURS VISIBLE) ===
 # Initialiser session_state pour stocker les données uploadées
 if 'uploaded_data' not in st.session_state:
     st.session_state.uploaded_data = None
+if 'use_uploaded' not in st.session_state:
+    st.session_state.use_uploaded = False
 
-# Chargement des données (local en priorité)
-data = load_data()
-
-# Si pas de fichier local, proposer l'upload d'un ZIP
-if data is None:
-    st.info("ℹ️ **Fichier local non trouvé** - Vous pouvez uploader un fichier ZIP contenant `training_stats.json`")
+# File uploader TOUJOURS visible (dans la sidebar)
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("### 📦 Upload Données")
 
     uploaded_file = st.file_uploader(
-        "📦 Glissez-déposez votre fichier ZIP ici",
+        "📤 Uploadez training_stats.zip",
         type=['zip'],
-        help="Le ZIP doit contenir un fichier 'training_stats.json' avec les données d'entraînement"
+        help="ZIP contenant training_stats.json"
     )
 
     if uploaded_file is not None:
-        # Charger les données depuis le ZIP
-        with st.spinner("⏳ Extraction du ZIP en cours..."):
-            data = load_data_from_zip(uploaded_file)
+        with st.spinner("⏳ Extraction..."):
+            loaded_data = load_data_from_zip(uploaded_file)
 
-            if data is not None:
-                # Stocker dans session_state pour éviter de recharger à chaque interaction
-                st.session_state.uploaded_data = data
-                st.rerun()  # Recharger le dashboard avec les nouvelles données
+            if loaded_data is not None:
+                st.session_state.uploaded_data = loaded_data
+                st.session_state.use_uploaded = True
+                st.success(f"✅ {len(loaded_data):,} checkpoints")
+                st.rerun()
 
-    # Utiliser les données en session_state si disponibles
+    # Boutons de contrôle si données uploadées disponibles
     if st.session_state.uploaded_data is not None:
-        data = st.session_state.uploaded_data
-        st.success(f"✅ Données chargées depuis ZIP (session active) : {len(data):,} checkpoints")
+        if st.button("🗑️ Effacer ZIP"):
+            st.session_state.uploaded_data = None
+            st.session_state.use_uploaded = False
+            st.rerun()
 
-# Si toujours pas de données, arrêter l'affichage
+# Chargement des données
+data = None
+
+# Priorité aux données uploadées si disponibles
+if st.session_state.use_uploaded and st.session_state.uploaded_data is not None:
+    data = st.session_state.uploaded_data
+    st.info(f"📦 **Données ZIP uploadées** : {len(data):,} checkpoints")
+else:
+    # Sinon essayer le fichier local
+    data = load_data()
+    if data is not None:
+        st.info(f"📁 **Données fichier local** : {len(data):,} checkpoints")
+
+# Si toujours pas de données, afficher instructions
 if data is None:
-    st.warning("⚠️ Aucune donnée disponible. Options :")
-    st.markdown("1. **Upload ZIP** : Utilisez le file uploader ci-dessus")
-    st.markdown("2. **Fichier local** : Placez `training_stats.json` dans le dossier du dashboard")
-    st.markdown("3. **Chemin attendu** : `C:\\Users\\lbye3\\Desktop\\GoldRL\\AGENT\\AGENT 7\\ENTRAINEMENT\\training_stats.json`")
+    st.warning("⚠️ **Aucune donnée disponible**")
+    st.markdown("👈 **Uploadez training_stats.zip** via la sidebar")
+    st.markdown("---")
+    st.markdown("### 🎯 Comment faire")
+    st.markdown("1. Local : `python create_training_zip.py`")
+    st.markdown("2. Upload le fichier ZIP via sidebar ←")
+    st.markdown("3. Dashboard se charge automatiquement")
     st.stop()
 
 # Calcul des métriques
