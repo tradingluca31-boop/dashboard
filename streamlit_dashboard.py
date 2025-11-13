@@ -32,20 +32,59 @@ def normalize_pnl(pnl):
     """Normalise le PnL en divisant par 100 (bug environnement)"""
     return pnl / PNL_MULTIPLIER
 
-def load_data():
-    """Charge les données depuis training_stats.json"""
-    json_path = Path(__file__).parent / "training_stats.json"
-
-    if not json_path.exists():
-        return None
+def load_data_from_zip(uploaded_file):
+    """Charge les données depuis un fichier ZIP contenant training_stats.json"""
+    import zipfile
+    import io
 
     try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        return data
-    except Exception as e:
-        st.error(f"❌ Erreur chargement JSON: {e}")
+        # Lire le fichier uploadé
+        zip_bytes = io.BytesIO(uploaded_file.read())
+
+        with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
+            # Chercher training_stats.json dans le ZIP
+            json_filename = None
+            for name in zip_ref.namelist():
+                if name.endswith('training_stats.json'):
+                    json_filename = name
+                    break
+
+            if not json_filename:
+                st.error("❌ Aucun fichier 'training_stats.json' trouvé dans le ZIP")
+                return None
+
+            # Extraire et charger le JSON
+            with zip_ref.open(json_filename) as json_file:
+                data = json.load(json_file)
+                st.success(f"✅ Données chargées depuis ZIP : {len(data):,} checkpoints trouvés")
+                return data
+
+    except zipfile.BadZipFile:
+        st.error("❌ Fichier ZIP corrompu ou invalide")
         return None
+    except json.JSONDecodeError as e:
+        st.error(f"❌ Erreur JSON dans le ZIP: {e}")
+        return None
+    except Exception as e:
+        st.error(f"❌ Erreur extraction ZIP: {e}")
+        return None
+
+def load_data():
+    """Charge les données depuis training_stats.json (local ou ZIP uploadé)"""
+    # En priorité, chercher le fichier local
+    json_path = Path(__file__).parent / "training_stats.json"
+
+    if json_path.exists():
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return data
+        except Exception as e:
+            st.error(f"❌ Erreur chargement JSON local: {e}")
+            return None
+
+    # Si pas de fichier local, retourner None (le uploader sera proposé)
+    return None
 
 def load_top_features():
     """Charge les top 100 features depuis le fichier de configuration"""
@@ -758,12 +797,45 @@ with st.sidebar:
     if st.button("🔄 Rafraîchir maintenant"):
         st.rerun()
 
-# Chargement des données
+# === FILE UPLOADER POUR ZIP ===
+# Initialiser session_state pour stocker les données uploadées
+if 'uploaded_data' not in st.session_state:
+    st.session_state.uploaded_data = None
+
+# Chargement des données (local en priorité)
 data = load_data()
 
+# Si pas de fichier local, proposer l'upload d'un ZIP
 if data is None:
-    st.warning("⚠️ Fichier training_stats.json non trouvé. Lancez d'abord le training.")
-    st.info("📍 Chemin attendu: `C:\\Users\\lbye3\\Desktop\\GoldRL\\AGENT\\AGENT 7\\ENTRAINEMENT\\training_stats.json`")
+    st.info("ℹ️ **Fichier local non trouvé** - Vous pouvez uploader un fichier ZIP contenant `training_stats.json`")
+
+    uploaded_file = st.file_uploader(
+        "📦 Glissez-déposez votre fichier ZIP ici",
+        type=['zip'],
+        help="Le ZIP doit contenir un fichier 'training_stats.json' avec les données d'entraînement"
+    )
+
+    if uploaded_file is not None:
+        # Charger les données depuis le ZIP
+        with st.spinner("⏳ Extraction du ZIP en cours..."):
+            data = load_data_from_zip(uploaded_file)
+
+            if data is not None:
+                # Stocker dans session_state pour éviter de recharger à chaque interaction
+                st.session_state.uploaded_data = data
+                st.rerun()  # Recharger le dashboard avec les nouvelles données
+
+    # Utiliser les données en session_state si disponibles
+    if st.session_state.uploaded_data is not None:
+        data = st.session_state.uploaded_data
+        st.success(f"✅ Données chargées depuis ZIP (session active) : {len(data):,} checkpoints")
+
+# Si toujours pas de données, arrêter l'affichage
+if data is None:
+    st.warning("⚠️ Aucune donnée disponible. Options :")
+    st.markdown("1. **Upload ZIP** : Utilisez le file uploader ci-dessus")
+    st.markdown("2. **Fichier local** : Placez `training_stats.json` dans le dossier du dashboard")
+    st.markdown("3. **Chemin attendu** : `C:\\Users\\lbye3\\Desktop\\GoldRL\\AGENT\\AGENT 7\\ENTRAINEMENT\\training_stats.json`")
     st.stop()
 
 # Calcul des métriques
