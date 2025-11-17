@@ -25,3 +25,6 @@ desktop.ini
 
 # Données privées (si nécessaire)
 # training_stats.json
+training_stats.json 
+*.json 
+agent7_*.zip 
