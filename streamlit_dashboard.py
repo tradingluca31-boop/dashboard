@@ -32,41 +32,196 @@ def normalize_pnl(pnl):
     """Normalise le PnL en divisant par 100 (bug environnement)"""
     return pnl / PNL_MULTIPLIER
 
+# ========================================
+# 🆕 UNIVERSAL ZIP HANDLER
+# ========================================
+
+def analyze_zip_content(zip_ref):
+    """
+    Analyse le contenu d'un ZIP et détecte son type.
+
+    Returns:
+        Dict avec:
+            - type: 'stats' | 'model' | 'mixed' | 'unknown'
+            - has_training_stats: bool
+            - has_model: bool
+            - training_stats_path: str | None
+            - model_files: List[str]
+            - all_files: List[str]
+    """
+    import zipfile
+
+    all_files = zip_ref.namelist()
+
+    # Chercher training_stats.json (n'importe où dans le ZIP)
+    training_stats_files = [f for f in all_files if 'training_stats.json' in f.lower()]
+    has_training_stats = len(training_stats_files) > 0
+    training_stats_path = training_stats_files[0] if has_training_stats else None
+
+    # Détecter fichiers de modèle RL (Stable-Baselines3 structure)
+    model_indicators = ['data', 'policy.pth', 'policy.optimizer.pth', 'pytorch_variables.pth']
+    model_files = [f for f in all_files if any(indicator in f for indicator in model_indicators)]
+    has_model = len(model_files) > 0
+
+    # Déterminer le type
+    if has_training_stats and has_model:
+        zip_type = 'mixed'
+    elif has_training_stats:
+        zip_type = 'stats'
+    elif has_model:
+        zip_type = 'model'
+    else:
+        zip_type = 'unknown'
+
+    return {
+        'type': zip_type,
+        'has_training_stats': has_training_stats,
+        'has_model': has_model,
+        'training_stats_path': training_stats_path,
+        'model_files': model_files,
+        'all_files': all_files,
+        'file_count': len(all_files)
+    }
+
+
+def display_zip_analysis(analysis):
+    """Affiche l'analyse du ZIP de manière user-friendly."""
+
+    zip_type = analysis['type']
+
+    # Emoji et message selon le type
+    type_info = {
+        'stats': ('📊', 'ZIP de statistiques training', 'success'),
+        'model': ('🤖', 'ZIP de modèle RL (best_model.zip ou checkpoint)', 'info'),
+        'mixed': ('🎯', 'ZIP complet (modèle + stats)', 'success'),
+        'unknown': ('❓', 'Type de ZIP non reconnu', 'warning')
+    }
+
+    emoji, message, status = type_info.get(zip_type, ('❓', 'Unknown', 'warning'))
+
+    if status == 'success':
+        st.success(f"{emoji} **{message}**")
+    elif status == 'info':
+        st.info(f"{emoji} **{message}**")
+    else:
+        st.warning(f"{emoji} **{message}**")
+
+    # Afficher les détails dans un expander
+    with st.expander(f"📦 Contenu du ZIP ({analysis['file_count']} fichiers)"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.write("**Détection:**")
+            st.write(f"✅ training_stats.json trouvé" if analysis['has_training_stats'] else "❌ Pas de training_stats.json")
+            st.write(f"✅ Modèle RL détecté" if analysis['has_model'] else "❌ Pas de modèle RL")
+
+        with col2:
+            st.write("**Fichiers détectés:**")
+            if analysis['has_training_stats']:
+                st.code(analysis['training_stats_path'], language=None)
+            if analysis['has_model']:
+                st.write(f"🤖 {len(analysis['model_files'])} fichiers modèle")
+
+        st.write("**Liste complète:**")
+        for f in analysis['all_files'][:20]:  # Limite à 20 pour éviter le spam
+            st.text(f"  • {f}")
+        if len(analysis['all_files']) > 20:
+            st.text(f"  ... et {len(analysis['all_files']) - 20} autres fichiers")
+
+
 def load_data_from_zip(uploaded_file):
-    """Charge les données depuis un fichier ZIP contenant training_stats.json"""
+    """
+    🆕 VERSION UNIVERSELLE - Charge les données depuis N'IMPORTE QUEL ZIP.
+
+    Gère automatiquement:
+    - ZIP avec training_stats.json (direct ou dans sous-dossier)
+    - ZIP de modèle RL (best_model.zip, checkpoints)
+    - ZIP mixtes (contient les deux)
+    - ZIP avec structure de dossiers complexe
+
+    Args:
+        uploaded_file: Fichier uploadé via st.file_uploader
+
+    Returns:
+        Liste de checkpoints ou None si erreur
+    """
     import zipfile
     import io
 
     try:
-        # Lire le fichier uploadé
+        # Lire le ZIP
         zip_bytes = io.BytesIO(uploaded_file.read())
 
         with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
-            # Chercher training_stats.json dans le ZIP
-            json_filename = None
-            for name in zip_ref.namelist():
-                if name.endswith('training_stats.json'):
-                    json_filename = name
-                    break
+            # 🆕 Analyser le contenu
+            analysis = analyze_zip_content(zip_ref)
 
-            if not json_filename:
-                st.error("❌ Aucun fichier 'training_stats.json' trouvé dans le ZIP")
+            # 🆕 Afficher l'analyse
+            display_zip_analysis(analysis)
+
+            # 🆕 Gérer selon le type détecté
+            if analysis['type'] == 'stats' or analysis['type'] == 'mixed':
+                # Extraire training_stats.json
+                training_stats_path = analysis['training_stats_path']
+
+                st.info(f"📂 Extraction de: `{training_stats_path}`")
+
+                with zip_ref.open(training_stats_path) as json_file:
+                    data = json.load(json_file)
+
+                    # Validation
+                    if not isinstance(data, list):
+                        st.error("❌ Format JSON invalide (doit être une liste de checkpoints)")
+                        return None
+
+                    st.success(f"✅ **{len(data):,} checkpoints** chargés avec succès!")
+
+                    # Stats rapides
+                    if len(data) > 0:
+                        last_checkpoint = data[-1]
+                        st.info(f"📊 Dernier checkpoint: **{last_checkpoint.get('timestep', 'N/A'):,} steps** | "
+                               f"ROI: **{last_checkpoint.get('roi', 0):.2f}%** | "
+                               f"Sharpe: **{last_checkpoint.get('sharpe_ratio', 0):.2f}**")
+
+                    return data
+
+            elif analysis['type'] == 'model':
+                # C'est un ZIP de modèle uniquement
+                st.warning("⚠️ Ce ZIP contient uniquement un modèle RL (pas de stats)")
+                st.info("💡 **Solutions:**")
+                st.write("1️⃣ Uploadez le fichier `training_stats.json` correspondant")
+                st.write("2️⃣ Ou cherchez le fichier dans: `AGENT/AGENT 7/training_stats.json`")
+                st.write("3️⃣ Ou créez un ZIP qui contient les deux fichiers")
+
+                # Afficher où le modèle a probablement été créé
+                if uploaded_file.name:
+                    st.code(f"💡 Si votre modèle est: {uploaded_file.name}\n"
+                           f"Les stats devraient être dans le même dossier!",
+                           language=None)
+
                 return None
 
-            # Extraire et charger le JSON
-            with zip_ref.open(json_filename) as json_file:
-                data = json.load(json_file)
-                st.success(f"✅ Données chargées depuis ZIP : {len(data):,} checkpoints trouvés")
-                return data
+            else:
+                # Type inconnu
+                st.error("❌ Impossible de trouver training_stats.json dans ce ZIP")
+                st.warning("💡 Le ZIP doit contenir un fichier nommé `training_stats.json` "
+                          "(à la racine ou dans un sous-dossier)")
+                return None
 
     except zipfile.BadZipFile:
-        st.error("❌ Fichier ZIP corrompu ou invalide")
+        st.error("❌ **Fichier ZIP corrompu** ou invalide")
+        st.info("💡 Vérifiez que le fichier est bien un ZIP valide")
         return None
+
     except json.JSONDecodeError as e:
-        st.error(f"❌ Erreur JSON dans le ZIP: {e}")
+        st.error(f"❌ **Erreur JSON**: Le fichier training_stats.json est mal formé")
+        st.code(f"Détails: {str(e)}", language=None)
         return None
+
     except Exception as e:
-        st.error(f"❌ Erreur extraction ZIP: {e}")
+        st.error(f"❌ **Erreur inattendue**: {type(e).__name__}")
+        st.code(str(e), language=None)
+        st.info("💡 Contactez le support si l'erreur persiste")
         return None
 
 def load_data():
