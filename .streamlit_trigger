@@ -1,1 +1,2 @@
-# Last update: jeu. 13 nov. 2025 20:21:04
+# Last update: dim. 17 nov. 2025 16:50:00
+# Fix: Force upload-only mode (no local training_stats.json)
