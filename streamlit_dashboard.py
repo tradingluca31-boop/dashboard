@@ -179,9 +179,14 @@ def load_data_from_zip(uploaded_file):
                     # Stats rapides
                     if len(data) > 0:
                         last_checkpoint = data[-1]
-                        st.info(f"📊 Dernier checkpoint: **{last_checkpoint.get('timestep', 'N/A'):,} steps** | "
-                               f"ROI: **{last_checkpoint.get('roi', 0):.2f}%** | "
-                               f"Sharpe: **{last_checkpoint.get('sharpe_ratio', 0):.2f}**")
+                        timestep = last_checkpoint.get('timestep', 0)
+                        roi = last_checkpoint.get('roi', 0)
+                        sharpe = last_checkpoint.get('sharpe_ratio', 0)
+
+                        timestep_str = f"{timestep:,}" if isinstance(timestep, (int, float)) else str(timestep)
+                        st.info(f"📊 Dernier checkpoint: **{timestep_str} steps** | "
+                               f"ROI: **{roi:.2f}%** | "
+                               f"Sharpe: **{sharpe:.2f}**")
 
                     return data
 
