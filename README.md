@@ -1,60 +1,76 @@
-# 📊 Agent 7 - Training Dashboard
+# 📊 RL Trading Dashboard - Universal CSV Support
 
-Dashboard en temps réel pour monitorer l'entraînement de l'Agent 7 (PPO Momentum Trader H1).
+Dashboard Streamlit institutionnel pour monitoring en temps réel des trainings RL Gold Trading avec **support universel de tous les CSV**.
 
-## 🚀 Démo Live
+## 🚀 Version 3.0 - Universal CSV Support
 
-**Dashboard déployé**: https://VOTRE_URL.streamlit.app *(à mettre à jour après déploiement)*
+**NEW**: Le dashboard détecte et affiche automatiquement **TOUS les types de CSV** générés par votre système de trading RL.
 
-## 📈 Fonctionnalités
+## ✨ Fonctionnalités Principales
 
-- ✅ **Monitoring temps réel** - Equity, PnL, Drawdown, Sharpe Ratio
-- ✅ **Auto-refresh** - Mise à jour automatique toutes les 10 secondes
-- ✅ **Graphiques interactifs** - Courbes d'équité, histogrammes PnL
-- ✅ **FTMO Compliance** - Vérification Max DD < 10%
-- ✅ **Top Trades** - Meilleurs et pires trades détaillés
-- ✅ **Statistiques complètes** - Win Rate, Profit Factor, Sharpe, etc.
+### 🔍 Auto-Détection Intelligente
+- ✅ **Scan récursif** - Détecte tous les CSV dans un répertoire
+- ✅ **Catégorisation automatique** - Identifie le type de CSV par ses colonnes
+- ✅ **Upload manuel** - Supporte l'upload direct de CSV
+- ✅ **Multi-agents** - Agent 7, 8, 9, 11, Meta-Agent
 
-## 🛠️ Technologies
+### 📊 Types de CSV Supportés
 
-- **Framework**: Streamlit
-- **Graphiques**: Plotly
-- **Data**: JSON (training_stats.json)
-- **Hébergement**: Streamlit Cloud (gratuit)
+| Type | Colonnes Clés | Visualisations |
+|------|---------------|----------------|
+| **Training Reports** | timesteps, roi_pct, sharpe, sortino, equity | Courbes complètes, métriques institutionnelles |
+| **Trades Details** | entry_price, exit_price, pnl, duration | Cumulative PnL, distribution, best/worst trades |
+| **Checkpoints Analysis** | steps, composite_score, roi, sharpe | Evolution scores, comparaison checkpoints |
+| **Quick Metrics** | timesteps, roi, equity | Métriques rapides, equity curve |
+| **Backtest Results** | agent, roi, sharpe_ratio, max_drawdown | Radar chart multi-agents, comparaison |
+| **Feature Importance** | feature, importance/shap_value | Top 20 features, bar chart |
+| **TensorBoard Exports** | step, value/loss/reward | Courbes temporelles |
 
-## 📊 Métriques Affichées
+### 📈 Visualisations Institutionnelles
 
-### Performance
-- ROI (%)
-- Total PnL ($)
-- Win Rate (%)
-- Profit Factor
-- Sharpe Ratio
-- Max Risk/Reward Ratio
+**Training Reports**:
+- Equity Curve avec remplissage
+- ROI % progression
+- Sharpe & Sortino Ratios
+- Max Drawdown % (avec seuil FTMO 10%)
+- Win Rate & Profit Factor
+- Diversity Score & Policy Entropy
 
-### Risk Management
-- Max Drawdown (% et $)
-- Average Win/Loss
-- FTMO Compliance (Max DD < 10%)
+**Trades Analysis**:
+- Cumulative PnL curve
+- PnL Distribution (histogramme)
+- Trade Duration analysis
+- Long vs Short performance
+- Top 10 best/worst trades
 
-### Trading
-- Total Trades
-- Winning vs Losing Trades
-- Top 10 meilleurs/pires trades
-- Distribution PnL (histogramme)
+**Checkpoints Analysis**:
+- Composite Score evolution
+- ROI by checkpoint (bar chart)
+- Sharpe Ratio progression
+- Max Drawdown tracking
+- Top 5 best checkpoints
+
+### 🎯 Métriques Institutionnelles
+
+- **Performance**: ROI, Total PnL, Win Rate, Profit Factor
+- **Risk**: Sharpe, Sortino, Calmar, Max Drawdown, VaR, CVaR
+- **Trading**: Total Trades, Avg Win/Loss, R-Multiple, Expectancy
+- **FTMO**: Max DD < 10%, Daily DD < 5% monitoring
 
 ## 🚀 Installation Locale
 
 ### Prérequis
-- Python 3.8+
-- pip
+```bash
+Python 3.8+
+pip
+```
 
 ### Installation
 
 ```bash
 # Cloner le repository
-git clone https://github.com/VOTRE_USERNAME/agent7-dashboard.git
-cd agent7-dashboard
+git clone https://github.com/tradingluca31-boop/dashboard.git
+cd dashboard
 
 # Installer les dépendances
 pip install -r requirements.txt
@@ -63,126 +79,204 @@ pip install -r requirements.txt
 streamlit run streamlit_dashboard.py
 ```
 
-Le dashboard sera accessible sur: http://localhost:8501
+Dashboard accessible sur: **http://localhost:8501**
+
+## 📖 Utilisation
+
+### Option 1: Auto-Détection (Recommandé)
+
+1. Lancer le dashboard
+2. Sidebar → Sélectionner **"Auto-detect from folder"**
+3. Entrer le chemin du dossier contenant vos CSV:
+   ```
+   C:\Users\lbye3\Desktop\GoldRL\AGENT
+   ```
+4. Cliquer sur **"Scan Folder"**
+5. Le dashboard détecte et catégorise automatiquement tous les CSV
+
+### Option 2: Upload Manuel
+
+1. Sidebar → Sélectionner **"Upload CSV files"**
+2. Drag & drop ou sélectionner vos CSV
+3. Le dashboard catégorise automatiquement chaque fichier
+4. Visualisations adaptées affichées instantanément
+
+### Option 3: GitHub Integration (Coming Soon)
+
+Chargement direct depuis un repo GitHub
 
 ## 📁 Structure du Projet
 
 ```
-agent7-dashboard/
-├── streamlit_dashboard.py      # Dashboard principal
-├── requirements.txt            # Dépendances Python
-├── training_stats.json         # Données training (mis à jour régulièrement)
-├── update_dashboard.bat        # Script Windows pour push automatique
-├── README.md                   # Ce fichier
-└── DEPLOIEMENT_STREAMLIT_CLOUD.md  # Guide déploiement complet
+dashboard/
+├── streamlit_dashboard.py          # Dashboard principal (v3.0 Universal CSV)
+├── requirements.txt                # Dependencies (streamlit, plotly, pandas, numpy)
+├── top100_features_agent7.txt      # Feature ranking Agent 7
+├── create_training_zip.py          # ZIP packaging script
+├── update_dashboard.bat            # Auto-update script (Windows)
+├── README.md                       # Documentation
+├── DEPLOIEMENT_STREAMLIT_CLOUD.md  # Deployment guide
+└── utils/                          # Utility functions
 ```
 
-## 🔄 Mise à Jour du Dashboard
+## 🔧 Configuration
 
-### Option 1: Script automatique (Windows)
+### Auto-Refresh
 
-```bash
-update_dashboard.bat
+Le dashboard se rafraîchit automatiquement (optionnel):
+- Intervalle configurable (10-60 secondes)
+- Toggle ON/OFF dans la sidebar
+
+### Chemins par Défaut
+
+**Dossier principal**: `C:\Users\lbye3\Desktop\GoldRL\AGENT`
+
+Contient:
+```
+AGENT/
+├── AGENT 7/
+│   ├── training/
+│   ├── models/
+│   └── ENTRAINEMENT/
+│       ├── training_report.csv
+│       ├── checkpoints_analysis.csv
+│       └── FICHIER EXCEL CSV AGENT 7/
+│           ├── smoke_test_trades_*.csv
+│           └── smoke_test_metrics_*.csv
+├── AGENT 8/
+├── AGENT 9/
+├── AGENT 11/
+└── backtest_preview_*.csv
 ```
 
-### Option 2: Manuel
+## 🎨 Interface
 
-```bash
-git add training_stats.json
-git commit -m "Update training stats"
-git push
+### Sidebar
+- **Data Source Selection**: Auto-detect, Upload, GitHub
+- **Folder Path Input**: Chemin du dossier à scanner
+- **Scan Button**: Lance la détection
+- **File Statistics**: Nombre de CSV trouvés par type
+
+### Main Dashboard
+- **Tabs par Type**: Un tab par catégorie de CSV
+- **File Selector**: Si plusieurs CSV du même type
+- **Visualizations**: Graphiques Plotly interactifs
+- **Metrics Cards**: Cartes métriques clés
+- **Data Tables**: Tableaux détaillés (best/worst trades, etc.)
+- **Download Button**: Export CSV
+
+## 🚨 Détection Automatique
+
+Le dashboard identifie le type de CSV basé sur ses colonnes:
+
+**Training Report** → `timesteps` + `roi_pct` + `sharpe` + `sortino` + `equity`
+**Trades** → `entry_price` + `exit_price` + `pnl` + `side`
+**Checkpoints** → `steps` + `file` + `composite_score`
+**Metrics** → `timestamp` + `timesteps` + `roi_pct` + `equity`
+**Backtest** → `agent` + `roi` + `sharpe_ratio` + `max_drawdown`
+**Features** → `feature` + `importance` (ou `shap_value`)
+**TensorBoard** → `step` + `value` (ou `loss`, `reward`)
+
+Si aucune correspondance → Affichage brut du CSV
+
+## 📊 Exemples de CSV Supportés
+
+### Training Report CSV
+```csv
+timesteps,roi_pct,sharpe,sortino,calmar,max_dd_pct,total_trades,win_rate,profit_factor,equity,balance
+970000,134.39,0.338,0.528,6.802,19.75,4511,49.84,0.927,234392.61,234110.61
 ```
 
-Le dashboard Streamlit Cloud se mettra à jour automatiquement en ~30 secondes.
-
-## 📊 Exemple de Visualisation
-
-Le dashboard affiche en temps réel:
-
-1. **Vue d'ensemble**
-   - Timesteps actuels / 1.5M
-   - Equity et ROI
-   - Total trades
-
-2. **Courbes temporelles**
-   - Évolution de l'equity
-   - Drawdown dans le temps
-   - Sharpe Ratio
-
-3. **Distributions**
-   - Histogramme des PnL par trade
-   - Top trades (meilleurs/pires)
-
-## ⚙️ Configuration
-
-### Auto-refresh
-
-Par défaut, le dashboard se rafraîchit automatiquement toutes les 10 secondes.
-
-Vous pouvez:
-- ✅ Activer/désactiver via la sidebar
-- ⚙️ Ajuster l'intervalle (5-60 secondes)
-
-### PnL Normalization
-
-⚠️ **Important**: Les PnL dans le JSON sont multipliés par ×100 (bug environnement).
-
-Le dashboard applique automatiquement une division par 100 pour afficher les valeurs correctes.
-
-## 🚨 Troubleshooting
-
-### Dashboard ne trouve pas training_stats.json
-
-Vérifiez que le fichier existe:
-```
-C:\Users\lbye3\Desktop\GoldRL\AGENT\AGENT 7\ENTRAINEMENT\training_stats.json
+### Trades CSV
+```csv
+entry_price,exit_price,side,size,pnl,pnl_pct,entry_time,exit_time,direction,duration_bars
+1913.1,1921.79,-1,0.599,-522.30,-0.00525,2021-01-04 01:00:00,2021-01-04 04:00:00,short,3
 ```
 
-### Métriques incorrectes
-
-Le dashboard effectue une **double vérification** du Total PnL:
-- Méthode 1: Somme de tous les trades
-- Méthode 2: Equity delta (equity finale - 100,000)
-
-Si différence > $100 → Affiche un avertissement
-
-### Dashboard ne se met pas à jour
-
-1. Vérifier que `training_stats.json` est bien pushé sur GitHub
-2. Attendre 30-60 secondes
-3. Hard refresh (Ctrl + Shift + R)
-4. Si problème persiste: "Reboot app" sur Streamlit Cloud
-
-## 📖 Documentation Complète
-
-Voir [DEPLOIEMENT_STREAMLIT_CLOUD.md](DEPLOIEMENT_STREAMLIT_CLOUD.md) pour:
-- Guide déploiement complet
-- Configuration GitHub
-- Workflow de mise à jour
-- Troubleshooting avancé
-
-## 🎯 Métriques Cibles
-
+### Checkpoints CSV
+```csv
+steps,file,equity,balance,roi_pct,sharpe,sortino,calmar,max_dd_pct,composite_score
+45500,checkpoint_45500_steps,87371.86,87371.86,-12.62,-2.16,-2.26,-0.97,12.91,0.592
 ```
-ROI:            > 12%
-Sharpe Ratio:   > 1.2
-Max Drawdown:   < 10% (FTMO compliance)
-Win Rate:       > 50%
-Profit Factor:  > 1.5
+
+## 🎯 Cas d'Usage
+
+### Scénario 1: Monitoring Training en Cours
+
+```python
+# Vos scripts de training génèrent automatiquement des CSV
+# → Le dashboard les détecte et affiche en temps réel
+python train_agent7.py  # Génère training_report.csv
 ```
+
+### Scénario 2: Analyse Post-Training
+
+```python
+# Après training, analyser tous les checkpoints
+dashboard.scan("C:/GoldRL/AGENT/AGENT 7/ENTRAINEMENT")
+# → Affiche checkpoints_analysis.csv avec meilleurs modèles
+```
+
+### Scénario 3: Comparaison Multi-Agents
+
+```python
+# Charger backtest multi-agents
+dashboard.upload(backtest_comparison.csv)
+# → Radar chart + tableau comparatif agents 7,8,9,11,Meta
+```
+
+## 🔥 Nouveautés v3.0
+
+- ✅ **Auto-detection récursive** de tous les CSV
+- ✅ **7 types de CSV** supportés automatiquement
+- ✅ **Catégorisation intelligente** par colonnes
+- ✅ **Visualisations adaptées** par type
+- ✅ **Upload multi-fichiers**
+- ✅ **Export/Download** intégré
+- ✅ **Style institutionnel** (dark theme, gradient cards)
+- ✅ **Support multi-agents** (7, 8, 9, 11, Meta)
 
 ## 📞 Support
 
-- **Documentation Streamlit**: https://docs.streamlit.io
-- **Issues**: https://github.com/VOTRE_USERNAME/agent7-dashboard/issues
-- **Discussions**: https://discuss.streamlit.io
+- **Issues**: [GitHub Issues](https://github.com/tradingluca31-boop/dashboard/issues)
+- **Docs Streamlit**: https://docs.streamlit.io
+- **Docs Plotly**: https://plotly.com/python/
 
-## 📝 License
+## 🏆 Performance Attendue
+
+```
+Agent 7 (PPO):      ROI ~12%, Sharpe ~1.2, DD ~8%
+Agent 8 (SAC):      ROI ~8%,  Sharpe ~1.0, DD ~9%
+Agent 9 (TD3):      ROI ~10%, Sharpe ~1.1, DD ~8%
+Agent 11 (A2C):     ROI ~6%,  Sharpe ~0.9, DD ~7%
+Meta-Agent (PPO):   ROI ~15-18%, Sharpe ~1.5, DD ~7%
+```
+
+## 📝 Changelog
+
+### v3.0.0 (2025-11-19)
+- ✨ Universal CSV Support
+- 🔍 Auto-detection de tous les types de CSV
+- 📊 7 types de visualisations différentes
+- 🎨 Interface refonte complète
+- ⚡ Performance optimisée
+
+### v2.0.0 (2025-11-12)
+- Agent 7 Dashboard avec JSON
+- TensorBoard integration
+- FTMO compliance monitoring
+
+### v1.0.0 (2025-11-09)
+- Version initiale
+
+## 📄 License
 
 Projet privé - Tous droits réservés
 
 ---
 
-**Agent 7** - PPO Momentum Trader H1 - Reinforcement Learning for Gold (XAUUSD)
+**🏛️ Institutional RL Trading Dashboard** | Multi-Agent Gold Trading System | Powered by Streamlit + Plotly
 
-*Dernière mise à jour: 2025-11-12*
+*Built with Claude Code - https://claude.com/claude-code*
+
+*Last updated: 2025-11-19 | Version: 3.0 Universal CSV*
