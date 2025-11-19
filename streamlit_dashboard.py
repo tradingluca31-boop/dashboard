@@ -33,17 +33,94 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS Custom pour style institutionnel
+# CSS Custom pour style institutionnel - COULEURS ÉCLAIRCIES
 st.markdown("""
 <style>
     .main {background-color: #0e1117;}
-    .stMetric {background-color: #1e2130; padding: 15px; border-radius: 10px; border-left: 3px solid #00d4ff;}
-    .stMetric:hover {border-left: 3px solid #00ff88; transition: 0.3s;}
-    h1, h2, h3 {color: #00d4ff;}
-    .success-box {background-color: #00ff8844; padding: 10px; border-radius: 5px; border-left: 4px solid #00ff88;}
-    .warning-box {background-color: #ffaa0044; padding: 10px; border-radius: 5px; border-left: 4px solid #ffaa00;}
-    .error-box {background-color: #ff004444; padding: 10px; border-radius: 5px; border-left: 4px solid #ff0044;}
-    .metric-card {background: linear-gradient(135deg, #1e2130 0%, #2d3250 100%); padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
+
+    /* Cartes métriques - couleurs éclaircies pour meilleure visibilité */
+    .stMetric {
+        background-color: #2a3142 !important;
+        padding: 20px !important;
+        border-radius: 12px !important;
+        border-left: 4px solid #00d4ff !important;
+        box-shadow: 0 2px 8px rgba(0, 212, 255, 0.15) !important;
+    }
+    .stMetric:hover {
+        border-left: 4px solid #00ff88 !important;
+        background-color: #323b52 !important;
+        transition: all 0.3s ease !important;
+    }
+
+    /* Labels et valeurs des métriques plus visibles */
+    .stMetric label {
+        color: #00d4ff !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+    }
+    .stMetric [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+        font-size: 28px !important;
+        font-weight: 700 !important;
+    }
+    .stMetric [data-testid="stMetricDelta"] {
+        font-size: 16px !important;
+    }
+
+    /* Titres */
+    h1, h2, h3 {color: #00d4ff !important;}
+
+    /* Boîtes de status */
+    .success-box {
+        background-color: #1a4d3a !important;
+        padding: 15px !important;
+        border-radius: 8px !important;
+        border-left: 5px solid #00ff88 !important;
+        color: #00ff88 !important;
+    }
+    .warning-box {
+        background-color: #4d3a1a !important;
+        padding: 15px !important;
+        border-radius: 8px !important;
+        border-left: 5px solid #ffaa00 !important;
+        color: #ffaa00 !important;
+    }
+    .error-box {
+        background-color: #4d1a1a !important;
+        padding: 15px !important;
+        border-radius: 8px !important;
+        border-left: 5px solid #ff0044 !important;
+        color: #ff0044 !important;
+    }
+
+    /* Cartes métriques custom */
+    .metric-card {
+        background: linear-gradient(135deg, #2a3142 0%, #3d4865 100%) !important;
+        padding: 25px !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 12px rgba(0, 212, 255, 0.2) !important;
+        border: 1px solid rgba(0, 212, 255, 0.1) !important;
+    }
+
+    /* Tableaux plus lisibles */
+    .dataframe {
+        background-color: #2a3142 !important;
+    }
+
+    /* Boutons */
+    .stButton>button {
+        background-color: #00d4ff !important;
+        color: #0e1117 !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        border: none !important;
+        padding: 10px 24px !important;
+        transition: all 0.3s ease !important;
+    }
+    .stButton>button:hover {
+        background-color: #00ff88 !important;
+        box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -260,34 +337,128 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
 
     st.subheader(f"📊 {title}")
 
-    # Conversion des timestamps
-    if 'entry_time' in df.columns:
+    # Conversion des timestamps et calcul durée en heures
+    if 'entry_time' in df.columns and 'exit_time' in df.columns:
         df['entry_time'] = pd.to_datetime(df['entry_time'])
         df['exit_time'] = pd.to_datetime(df['exit_time'])
+        # Calculer la durée en heures (plus lisible que bars)
+        df['duration_hours'] = (df['exit_time'] - df['entry_time']).dt.total_seconds() / 3600
+        df['duration_days'] = df['duration_hours'] / 24
 
-    # Statistiques globales
+    # ========================================================================
+    # MÉTRIQUES INSTITUTIONNELLES COMPLÈTES
+    # ========================================================================
+
+    # Calculs de base
     total_pnl = df['pnl'].sum()
     avg_pnl = df['pnl'].mean()
     win_trades = len(df[df['pnl'] > 0])
     loss_trades = len(df[df['pnl'] < 0])
     win_rate = (win_trades / len(df) * 100) if len(df) > 0 else 0
 
-    col1, col2, col3, col4 = st.columns(4)
+    # Calculs avancés
+    wins = df[df['pnl'] > 0]['pnl']
+    losses = df[df['pnl'] < 0]['pnl']
+    avg_win = wins.mean() if len(wins) > 0 else 0
+    avg_loss = abs(losses.mean()) if len(losses) > 0 else 0
+    total_wins = wins.sum()
+    total_losses = abs(losses.sum())
+
+    # Profit Factor
+    profit_factor = total_wins / total_losses if total_losses > 0 else 0
+
+    # Risk/Reward Ratio
+    rr_ratio = avg_win / avg_loss if avg_loss > 0 else 0
+
+    # Expectancy (moyenne pondérée)
+    expectancy = (win_rate/100 * avg_win) - ((1 - win_rate/100) * avg_loss)
+
+    # Best/Worst trades
+    best_trade = df['pnl'].max()
+    worst_trade = df['pnl'].min()
+
+    # Drawdown (si cumulative PnL disponible)
+    df['cumulative_pnl'] = df['pnl'].cumsum()
+    running_max = df['cumulative_pnl'].cumsum().expanding().max()
+    drawdown = df['cumulative_pnl'] - running_max
+    max_drawdown = abs(drawdown.min()) if len(drawdown) > 0 else 0
+    max_drawdown_pct = (max_drawdown / (100000 + running_max.max())) * 100 if running_max.max() > 0 else 0
+
+    # Sharpe Ratio (simplifié - assume 252 trading days)
+    returns = df['pnl_pct'] if 'pnl_pct' in df.columns else df['pnl'] / 100000
+    sharpe_ratio = (returns.mean() / returns.std() * np.sqrt(252)) if returns.std() > 0 else 0
+
+    # Sortino Ratio (seulement downside deviation)
+    downside_returns = returns[returns < 0]
+    downside_std = downside_returns.std() if len(downside_returns) > 0 else returns.std()
+    sortino_ratio = (returns.mean() / downside_std * np.sqrt(252)) if downside_std > 0 else 0
+
+    # Calmar Ratio
+    calmar_ratio = (total_pnl / 100000) / (max_drawdown_pct / 100) if max_drawdown_pct > 0 else 0
+
+    # Recovery Factor
+    recovery_factor = total_pnl / max_drawdown if max_drawdown > 0 else 0
+
+    # Affichage métriques - TOUTES LES MÉTRIQUES IMPORTANTES
+    st.markdown("### 📊 Performance Metrics")
+    col1, col2, col3, col4, col5 = st.columns(5)
+
     with col1:
         st.metric("💰 Total PnL", f"${total_pnl:,.2f}")
-    with col2:
         st.metric("📊 Avg PnL/Trade", f"${avg_pnl:.2f}")
-    with col3:
+
+    with col2:
         st.metric("✅ Win Rate", f"{win_rate:.1f}%")
-    with col4:
         st.metric("📈 Total Trades", f"{len(df)}")
+
+    with col3:
+        st.metric("💎 Profit Factor", f"{profit_factor:.2f}")
+        st.metric("⚖️ Risk/Reward", f"{rr_ratio:.2f}")
+
+    with col4:
+        st.metric("💵 Expectancy", f"${expectancy:.2f}")
+        st.metric("📉 Max DD", f"${max_drawdown:,.2f}")
+
+    with col5:
+        st.metric("🏆 Best Trade", f"${best_trade:,.2f}")
+        st.metric("💀 Worst Trade", f"${worst_trade:,.2f}")
+
+    st.markdown("---")
+    st.markdown("### 📈 Risk-Adjusted Metrics")
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    with col1:
+        st.metric("📊 Sharpe Ratio", f"{sharpe_ratio:.2f}")
+    with col2:
+        st.metric("💎 Sortino Ratio", f"{sortino_ratio:.2f}")
+    with col3:
+        st.metric("🎯 Calmar Ratio", f"{calmar_ratio:.2f}")
+    with col4:
+        st.metric("🔄 Recovery Factor", f"{recovery_factor:.2f}")
+    with col5:
+        st.metric("📉 Max DD %", f"{max_drawdown_pct:.2f}%")
+
+    st.markdown("---")
+    st.markdown("### 💹 Win/Loss Analysis")
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric("✅ Winning Trades", f"{win_trades}")
+    with col2:
+        st.metric("❌ Losing Trades", f"{loss_trades}")
+    with col3:
+        st.metric("💰 Avg Win", f"${avg_win:.2f}")
+    with col4:
+        st.metric("💸 Avg Loss", f"${avg_loss:.2f}")
+
+    st.markdown("---")
 
     # Graphiques
     fig = make_subplots(
         rows=2, cols=2,
         subplot_titles=(
             "📈 Cumulative PnL", "📊 PnL Distribution",
-            "⏱️ Trade Duration (bars)", "💹 Long vs Short Performance"
+            "⏱️ Trade Duration (heures)", "💹 Long vs Short Performance"
         ),
         vertical_spacing=0.15,
         horizontal_spacing=0.1
@@ -301,32 +472,88 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
         fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.1)'
     ), row=1, col=1)
 
-    # 2. PnL Distribution
+    # 2. PnL Distribution (gérer les cas particuliers)
+    pnl_data = df['pnl'].dropna()  # Retirer les NaN
+    nbins = min(50, max(10, len(pnl_data) // 10))  # Adapter le nombre de bins
     fig.add_trace(go.Histogram(
-        x=df['pnl'], nbinsx=50,
+        x=pnl_data,
+        nbinsx=nbins,
         name='PnL Distribution',
-        marker=dict(color='#00ff88', line=dict(color='white', width=1))
+        marker=dict(
+            color='#00ff88',
+            line=dict(color='#ffffff', width=0.5),
+            opacity=0.8
+        ),
+        showlegend=False
     ), row=1, col=2)
 
-    # 3. Trade Duration
-    if 'duration_bars' in df.columns:
+    # 3. Trade Duration (en heures)
+    if 'duration_hours' in df.columns:
+        duration_data = df['duration_hours'].dropna()
+        # Adapter le nombre de bins selon les données
+        nbins_duration = min(30, max(10, len(duration_data) // 5))
+
+        # Déterminer si afficher en heures ou jours
+        max_duration = duration_data.max()
+        if max_duration > 72:  # Plus de 3 jours → afficher en jours
+            duration_data = df['duration_days'].dropna()
+            duration_label = 'jours'
+            title_duration = "⏱️ Trade Duration (jours)"
+        else:
+            duration_label = 'heures'
+            title_duration = "⏱️ Trade Duration (heures)"
+
+        fig.add_trace(go.Histogram(
+            x=duration_data,
+            nbinsx=nbins_duration,
+            name=f'Duration ({duration_label})',
+            marker=dict(
+                color='#ff00ff',
+                line=dict(color='#ffffff', width=0.5),
+                opacity=0.8
+            ),
+            showlegend=False
+        ), row=2, col=1)
+
+        # Mise à jour du titre du subplot
+        fig.layout.annotations[2].text = title_duration
+    elif 'duration_bars' in df.columns:
+        # Fallback si pas de timestamps mais bars disponible
         fig.add_trace(go.Histogram(
             x=df['duration_bars'], nbinsx=30,
             name='Duration (bars)',
             marker=dict(color='#ff00ff', line=dict(color='white', width=1))
         ), row=2, col=1)
 
-    # 4. Long vs Short
+    # 4. Long vs Short (détection améliorée)
     if 'side' in df.columns or 'direction' in df.columns:
-        side_col = 'side' if 'side' in df.columns else 'direction'
-        long_pnl = df[df[side_col].isin([1, 'long'])]['pnl'].sum()
-        short_pnl = df[df[side_col].isin([-1, 'short'])]['pnl'].sum()
+        # Choisir la colonne appropriée
+        if 'direction' in df.columns:
+            side_col = 'direction'
+            # Convertir en string et uniformiser
+            df[side_col] = df[side_col].astype(str).str.lower()
+            long_pnl = df[df[side_col].str.contains('long', na=False)]['pnl'].sum()
+            short_pnl = df[df[side_col].str.contains('short', na=False)]['pnl'].sum()
+        else:
+            side_col = 'side'
+            # Gérer les valeurs numériques (1, -1) ou (2, 1, 0)
+            long_pnl = df[df[side_col] == 1]['pnl'].sum()
+            short_pnl = df[df[side_col] == -1]['pnl'].sum()
 
+        # Nombre de trades
+        long_count = len(df[df[side_col].isin([1, 'long']) if side_col == 'side' else df[side_col].str.contains('long', na=False)])
+        short_count = len(df[df[side_col].isin([-1, 'short']) if side_col == 'side' else df[side_col].str.contains('short', na=False)])
+
+        # Graphique avec annotations
         fig.add_trace(go.Bar(
             x=['Long', 'Short'],
             y=[long_pnl, short_pnl],
+            text=[f'${long_pnl:,.2f}<br>({long_count} trades)',
+                  f'${short_pnl:,.2f}<br>({short_count} trades)'],
+            textposition='outside',
             marker=dict(color=['#00ff88', '#ff0044']),
-            name='PnL by Direction'
+            name='PnL by Direction',
+            showlegend=False
         ), row=2, col=2)
 
     fig.update_layout(
