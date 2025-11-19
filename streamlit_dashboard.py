@@ -523,8 +523,7 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
     with col1:
         st.metric("📉 Max DD $", f"${max_drawdown:,.2f}")
     with col2:
-        st.metric("📉 Max DD %", f"{max_drawdown_pct:.2f}%",
-                  delta="FTMO Limite: 10%" if max_drawdown_pct < 10 else None)
+        st.metric("📉 Max DD %", f"{max_drawdown_pct:.2f}%")
     with col3:
         st.metric("🌡️ Ulcer Index", f"{ulcer_index:.2f}")
     with col4:
