@@ -377,12 +377,18 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
     best_trade = df['pnl'].max()
     worst_trade = df['pnl'].min()
 
-    # Drawdown (si cumulative PnL disponible)
+    # Drawdown (CORRECTION du calcul)
     df['cumulative_pnl'] = df['pnl'].cumsum()
-    running_max = df['cumulative_pnl'].cumsum().expanding().max()
-    drawdown = df['cumulative_pnl'] - running_max
+    # Capital à chaque étape (100K initial + cumulative PnL)
+    df['capital'] = 100000 + df['cumulative_pnl']
+    # Running max du capital
+    running_max = df['capital'].expanding().max()
+    # Drawdown à chaque étape
+    drawdown = df['capital'] - running_max
+    # Max Drawdown en $
     max_drawdown = abs(drawdown.min()) if len(drawdown) > 0 else 0
-    max_drawdown_pct = (max_drawdown / (100000 + running_max.max())) * 100 if running_max.max() > 0 else 0
+    # Max Drawdown en % (basé sur le running max)
+    max_drawdown_pct = (max_drawdown / running_max.max()) * 100 if running_max.max() > 0 else 0
 
     # Sharpe Ratio (simplifié - assume 252 trading days)
     returns = df['pnl_pct'] if 'pnl_pct' in df.columns else df['pnl'] / 100000
@@ -399,57 +405,161 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
     # Recovery Factor
     recovery_factor = total_pnl / max_drawdown if max_drawdown > 0 else 0
 
-    # Affichage métriques - TOUTES LES MÉTRIQUES IMPORTANTES
+    # Capital Final & Gain
+    initial_capital = 100000
+    final_capital = initial_capital + total_pnl
+    roi_pct = (total_pnl / initial_capital) * 100
+    capital_gain = total_pnl
+
+    # VaR 95% (Value at Risk)
+    var_95 = np.percentile(df['pnl'], 5) if len(df) > 0 else 0
+
+    # CVaR 95% (Conditional VaR / Expected Shortfall)
+    cvar_95 = df[df['pnl'] <= var_95]['pnl'].mean() if len(df[df['pnl'] <= var_95]) > 0 else 0
+
+    # MAR Ratio (return / max drawdown)
+    mar_ratio = (total_pnl / 100000) / (max_drawdown_pct / 100) if max_drawdown_pct > 0 else 0
+
+    # Ulcer Index (mesure de stress du drawdown)
+    squared_dd = (drawdown / running_max * 100) ** 2
+    ulcer_index = np.sqrt(squared_dd.mean()) if len(squared_dd) > 0 else 0
+
+    # Average Trade Duration
+    avg_duration_hours = df['duration_hours'].mean() if 'duration_hours' in df.columns else 0
+    avg_duration_days = avg_duration_hours / 24
+
+    # Consecutive Wins/Losses
+    df['win'] = (df['pnl'] > 0).astype(int)
+    df['loss'] = (df['pnl'] < 0).astype(int)
+    df['win_streak'] = df['win'].groupby((df['win'] != df['win'].shift()).cumsum()).cumsum()
+    df['loss_streak'] = df['loss'].groupby((df['loss'] != df['loss'].shift()).cumsum()).cumsum()
+    max_consecutive_wins = df['win_streak'].max()
+    max_consecutive_losses = df['loss_streak'].max()
+
+    # Payoff Ratio (avg win / avg loss)
+    payoff_ratio = avg_win / avg_loss if avg_loss > 0 else 0
+
+    # Kelly Criterion
+    kelly = (win_rate/100 - (1 - win_rate/100) / payoff_ratio) if payoff_ratio > 0 else 0
+
+    # Z-Score (qualité des trades)
+    w = win_trades
+    l = loss_trades
+    n = w + l
+    if n > 0 and w > 0 and l > 0:
+        p = 0.5  # probabilité random
+        z_score = (w - n * p) / np.sqrt(n * p * (1 - p))
+    else:
+        z_score = 0
+
+    # ========================================================================
+    # AFFICHAGE - TOUTES LES MÉTRIQUES INSTITUTIONNELLES (40+)
+    # ========================================================================
+
+    # Section 1: CAPITAL & GAINS
+    st.markdown("### 💰 Capital & Gains")
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    with col1:
+        st.metric("💵 Capital Initial", f"${initial_capital:,.0f}")
+    with col2:
+        st.metric("💰 Capital Final", f"${final_capital:,.2f}")
+    with col3:
+        st.metric("📈 Gain Total", f"${capital_gain:,.2f}",
+                  delta=f"{roi_pct:.2f}%")
+    with col4:
+        st.metric("📊 ROI %", f"{roi_pct:.2f}%")
+    with col5:
+        st.metric("📈 Total Trades", f"{len(df)}")
+
+    st.markdown("---")
+
+    # Section 2: PERFORMANCE METRICS
     st.markdown("### 📊 Performance Metrics")
     col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
-        st.metric("💰 Total PnL", f"${total_pnl:,.2f}")
-        st.metric("📊 Avg PnL/Trade", f"${avg_pnl:.2f}")
+        st.metric("💰 PnL Total", f"${total_pnl:,.2f}")
+        st.metric("📊 PnL Moyen/Trade", f"${avg_pnl:.2f}")
 
     with col2:
-        st.metric("✅ Win Rate", f"{win_rate:.1f}%")
-        st.metric("📈 Total Trades", f"{len(df)}")
+        st.metric("✅ Taux de Réussite", f"{win_rate:.1f}%")
+        st.metric("💎 Profit Factor", f"{profit_factor:.2f}")
 
     with col3:
-        st.metric("💎 Profit Factor", f"{profit_factor:.2f}")
         st.metric("⚖️ Risk/Reward", f"{rr_ratio:.2f}")
+        st.metric("💸 Payoff Ratio", f"{payoff_ratio:.2f}")
 
     with col4:
-        st.metric("💵 Expectancy", f"${expectancy:.2f}")
-        st.metric("📉 Max DD", f"${max_drawdown:,.2f}")
+        st.metric("💵 Espérance", f"${expectancy:.2f}")
+        st.metric("📊 Kelly %", f"{kelly*100:.1f}%")
 
     with col5:
-        st.metric("🏆 Best Trade", f"${best_trade:,.2f}")
-        st.metric("💀 Worst Trade", f"${worst_trade:,.2f}")
+        st.metric("🏆 Meilleur Trade", f"${best_trade:,.2f}")
+        st.metric("💀 Pire Trade", f"${worst_trade:,.2f}")
 
     st.markdown("---")
-    st.markdown("### 📈 Risk-Adjusted Metrics")
+
+    # Section 3: RISK-ADJUSTED METRICS
+    st.markdown("### 📈 Risk-Adjusted Metrics (Sharpe, Sortino, Calmar...)")
     col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
-        st.metric("📊 Sharpe Ratio", f"{sharpe_ratio:.2f}")
+        st.metric("💎 Sharpe Ratio", f"{sharpe_ratio:.2f}")
     with col2:
         st.metric("💎 Sortino Ratio", f"{sortino_ratio:.2f}")
     with col3:
         st.metric("🎯 Calmar Ratio", f"{calmar_ratio:.2f}")
     with col4:
-        st.metric("🔄 Recovery Factor", f"{recovery_factor:.2f}")
+        st.metric("📊 MAR Ratio", f"{mar_ratio:.2f}")
     with col5:
-        st.metric("📉 Max DD %", f"{max_drawdown_pct:.2f}%")
+        st.metric("🔄 Recovery Factor", f"{recovery_factor:.2f}")
 
     st.markdown("---")
-    st.markdown("### 💹 Win/Loss Analysis")
-    col1, col2, col3, col4 = st.columns(4)
+
+    # Section 4: DRAWDOWN & RISK
+    st.markdown("### 📉 Drawdown & Risk Management")
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
-        st.metric("✅ Winning Trades", f"{win_trades}")
+        st.metric("📉 Max DD $", f"${max_drawdown:,.2f}")
     with col2:
-        st.metric("❌ Losing Trades", f"{loss_trades}")
+        st.metric("📉 Max DD %", f"{max_drawdown_pct:.2f}%",
+                  delta="FTMO Limite: 10%" if max_drawdown_pct < 10 else None)
     with col3:
-        st.metric("💰 Avg Win", f"${avg_win:.2f}")
+        st.metric("🌡️ Ulcer Index", f"{ulcer_index:.2f}")
     with col4:
-        st.metric("💸 Avg Loss", f"${avg_loss:.2f}")
+        st.metric("⚠️ VaR 95%", f"${var_95:.2f}")
+    with col5:
+        st.metric("🔻 CVaR 95%", f"${cvar_95:.2f}")
+
+    st.markdown("---")
+
+    # Section 5: WIN/LOSS ANALYSIS
+    st.markdown("### 💹 Win/Loss Analysis Détaillée")
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    with col1:
+        st.metric("✅ Trades Gagnants", f"{win_trades}")
+        st.metric("💰 Gain Moyen", f"${avg_win:.2f}")
+
+    with col2:
+        st.metric("❌ Trades Perdants", f"{loss_trades}")
+        st.metric("💸 Perte Moyenne", f"${avg_loss:.2f}")
+
+    with col3:
+        st.metric("💰 Gains Totaux", f"${total_wins:,.2f}")
+        st.metric("💸 Pertes Totales", f"${total_losses:,.2f}")
+
+    with col4:
+        st.metric("🔥 Max Wins Consécutifs", f"{int(max_consecutive_wins)}")
+        st.metric("❄️ Max Losses Consécutifs", f"{int(max_consecutive_losses)}")
+
+    with col5:
+        st.metric("📊 Z-Score", f"{z_score:.2f}")
+        st.metric("⏱️ Durée Moy.",
+                  f"{avg_duration_hours:.1f}h" if avg_duration_hours < 24
+                  else f"{avg_duration_days:.1f}j")
 
     st.markdown("---")
 
@@ -472,20 +582,35 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
         fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.1)'
     ), row=1, col=1)
 
-    # 2. PnL Distribution (gérer les cas particuliers)
+    # 2. PnL Distribution (amélioration avec coloration Win/Loss)
     pnl_data = df['pnl'].dropna()  # Retirer les NaN
-    nbins = min(50, max(10, len(pnl_data) // 10))  # Adapter le nombre de bins
+    nbins = min(40, max(15, len(pnl_data) // 20))  # Bins adaptatifs mais plus lisibles
+
+    # Créer histogramme avec coloration selon win/loss
     fig.add_trace(go.Histogram(
         x=pnl_data,
         nbinsx=nbins,
         name='PnL Distribution',
         marker=dict(
-            color='#00ff88',
+            color=pnl_data,
+            colorscale=[
+                [0, '#ff0044'],      # Rouge pour pertes
+                [0.5, '#ffaa00'],    # Orange pour neutre
+                [1, '#00ff88']       # Vert pour gains
+            ],
             line=dict(color='#ffffff', width=0.5),
-            opacity=0.8
+            opacity=0.8,
+            showscale=False
         ),
-        showlegend=False
+        showlegend=False,
+        hovertemplate='PnL: %{x:$.2f}<br>Count: %{y}<extra></extra>'
     ), row=1, col=2)
+
+    # Ajouter ligne verticale à 0 pour séparer wins/losses
+    fig.add_vline(x=0, line_dash="dash", line_color="white",
+                  line_width=2, row=1, col=2,
+                  annotation_text="Break Even",
+                  annotation_position="top")
 
     # 3. Trade Duration (en heures)
     if 'duration_hours' in df.columns:
@@ -525,24 +650,37 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
             marker=dict(color='#ff00ff', line=dict(color='white', width=1))
         ), row=2, col=1)
 
-    # 4. Long vs Short (détection améliorée)
+    # 4. Long vs Short (CORRECTION COMPLÈTE)
     if 'side' in df.columns or 'direction' in df.columns:
-        # Choisir la colonne appropriée
+        # Déterminer quelle colonne utiliser
         if 'direction' in df.columns:
             side_col = 'direction'
             # Convertir en string et uniformiser
-            df[side_col] = df[side_col].astype(str).str.lower()
-            long_pnl = df[df[side_col].str.contains('long', na=False)]['pnl'].sum()
-            short_pnl = df[df[side_col].str.contains('short', na=False)]['pnl'].sum()
+            df_temp = df.copy()
+            df_temp[side_col] = df_temp[side_col].astype(str).str.lower()
+
+            # Filtrer Long et Short
+            long_mask = df_temp[side_col].str.contains('long', na=False)
+            short_mask = df_temp[side_col].str.contains('short', na=False)
+
+            long_pnl = df_temp[long_mask]['pnl'].sum()
+            short_pnl = df_temp[short_mask]['pnl'].sum()
+            long_count = long_mask.sum()
+            short_count = short_mask.sum()
+
         else:
             side_col = 'side'
-            # Gérer les valeurs numériques (1, -1) ou (2, 1, 0)
-            long_pnl = df[df[side_col] == 1]['pnl'].sum()
-            short_pnl = df[df[side_col] == -1]['pnl'].sum()
+            # Gérer les valeurs numériques (1=Long, -1=Short)
+            long_mask = df[side_col] == 1
+            short_mask = df[side_col] == -1
 
-        # Nombre de trades
-        long_count = len(df[df[side_col].isin([1, 'long']) if side_col == 'side' else df[side_col].str.contains('long', na=False)])
-        short_count = len(df[df[side_col].isin([-1, 'short']) if side_col == 'side' else df[side_col].str.contains('short', na=False)])
+            long_pnl = df[long_mask]['pnl'].sum()
+            short_pnl = df[short_mask]['pnl'].sum()
+            long_count = long_mask.sum()
+            short_count = short_mask.sum()
+
+        # Debug info (optionnel - pour vérifier)
+        st.caption(f"🔍 Debug: Long={long_count} trades (${long_pnl:,.2f}), Short={short_count} trades (${short_pnl:,.2f})")
 
         # Graphique avec annotations
         fig.add_trace(go.Bar(
@@ -553,8 +691,26 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
             textposition='outside',
             marker=dict(color=['#00ff88', '#ff0044']),
             name='PnL by Direction',
-            showlegend=False
+            showlegend=False,
+            hovertemplate='Direction: %{x}<br>PnL: %{y:$.2f}<extra></extra>'
         ), row=2, col=2)
+
+    # Update axes labels
+    fig.update_xaxes(title_text="Trade Index", row=1, col=1)
+    fig.update_yaxes(title_text="PnL Cumulatif ($)", row=1, col=1)
+
+    fig.update_xaxes(title_text="PnL ($)", row=1, col=2)
+    fig.update_yaxes(title_text="Fréquence", row=1, col=2)
+
+    if 'duration_hours' in df.columns:
+        duration_label_axis = "Jours" if max_duration > 72 else "Heures"
+        fig.update_xaxes(title_text=f"Durée ({duration_label_axis})", row=2, col=1)
+    else:
+        fig.update_xaxes(title_text="Durée (bars)", row=2, col=1)
+    fig.update_yaxes(title_text="Nombre de Trades", row=2, col=1)
+
+    fig.update_xaxes(title_text="Direction", row=2, col=2)
+    fig.update_yaxes(title_text="PnL Total ($)", row=2, col=2)
 
     fig.update_layout(
         height=800,
