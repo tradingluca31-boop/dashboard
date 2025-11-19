@@ -465,8 +465,7 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
     with col2:
         st.metric("💰 Capital Final", f"${final_capital:,.2f}")
     with col3:
-        st.metric("📈 Gain Total", f"${capital_gain:,.2f}",
-                  delta=f"{roi_pct:.2f}%")
+        st.metric("📈 Gain Total", f"${capital_gain:,.2f}")
     with col4:
         st.metric("📊 ROI %", f"{roi_pct:.2f}%")
     with col5:
