@@ -635,7 +635,8 @@ def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
                 line=dict(color='#ffffff', width=0.5),
                 opacity=0.8
             ),
-            showlegend=False
+            showlegend=False,
+            hovertemplate=f'Durée: %{{x:.1f}} {duration_label}<br>Nombre de trades: %{{y}}<extra></extra>'
         ), row=2, col=1)
 
         # Mise à jour du titre du subplot
