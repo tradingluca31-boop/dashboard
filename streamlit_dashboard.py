@@ -1,1659 +1,727 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Dashboard Streamlit - Agent 7 Training Monitor
-Affiche les métriques en temps réel depuis training_stats.json
+🏛️ INSTITUTIONAL RL TRADING DASHBOARD - UNIVERSAL CSV SUPPORT
+================================================================
+Dashboard Streamlit pour monitoring en temps réel des trainings RL Gold Trading
+Support TOUS les fichiers CSV générés automatiquement
+
+Version: 3.0 CSV Universal
+Date: 2025-11-19
+Author: Claude Code + User
 """
 
 import streamlit as st
-import json
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import plotly.express as px
 from pathlib import Path
-import time
+from typing import Dict, List, Optional, Tuple
+import json
 from datetime import datetime
-import numpy as np
-import warnings
-warnings.filterwarnings('ignore')
+import glob
+import os
 
-# Configuration de la page
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
 st.set_page_config(
-    page_title="Agent 7 - Training Dashboard",
+    page_title="RL Trading Dashboard - CSV Universal",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Constante de normalisation PnL
-PNL_MULTIPLIER = 100
+# CSS Custom pour style institutionnel
+st.markdown("""
+<style>
+    .main {background-color: #0e1117;}
+    .stMetric {background-color: #1e2130; padding: 15px; border-radius: 10px; border-left: 3px solid #00d4ff;}
+    .stMetric:hover {border-left: 3px solid #00ff88; transition: 0.3s;}
+    h1, h2, h3 {color: #00d4ff;}
+    .success-box {background-color: #00ff8844; padding: 10px; border-radius: 5px; border-left: 4px solid #00ff88;}
+    .warning-box {background-color: #ffaa0044; padding: 10px; border-radius: 5px; border-left: 4px solid #ffaa00;}
+    .error-box {background-color: #ff004444; padding: 10px; border-radius: 5px; border-left: 4px solid #ff0044;}
+    .metric-card {background: linear-gradient(135deg, #1e2130 0%, #2d3250 100%); padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);}
+</style>
+""", unsafe_allow_html=True)
 
-def normalize_pnl(pnl):
-    """Normalise le PnL en divisant par 100 (bug environnement)"""
-    return pnl / PNL_MULTIPLIER
+# ============================================================================
+# FONCTIONS DE DÉTECTION ET CATÉGORISATION CSV
+# ============================================================================
 
-# ========================================
-# 🆕 UNIVERSAL ZIP HANDLER
-# ========================================
-
-def analyze_zip_content(zip_ref):
+def detect_csv_type(df: pd.DataFrame, filename: str) -> str:
     """
-    Analyse le contenu d'un ZIP et détecte son type.
-
-    Returns:
-        Dict avec:
-            - type: 'stats' | 'model' | 'mixed' | 'unknown'
-            - has_training_stats: bool
-            - has_model: bool
-            - training_stats_path: str | None
-            - model_files: List[str]
-            - all_files: List[str]
-    """
-    import zipfile
-
-    all_files = zip_ref.namelist()
-
-    # Chercher training_stats.json (n'importe où dans le ZIP)
-    training_stats_files = [f for f in all_files if 'training_stats.json' in f.lower()]
-    has_training_stats = len(training_stats_files) > 0
-    training_stats_path = training_stats_files[0] if has_training_stats else None
-
-    # Détecter fichiers de modèle RL (Stable-Baselines3 structure)
-    model_indicators = ['data', 'policy.pth', 'policy.optimizer.pth', 'pytorch_variables.pth']
-    model_files = [f for f in all_files if any(indicator in f for indicator in model_indicators)]
-    has_model = len(model_files) > 0
-
-    # Déterminer le type
-    if has_training_stats and has_model:
-        zip_type = 'mixed'
-    elif has_training_stats:
-        zip_type = 'stats'
-    elif has_model:
-        zip_type = 'model'
-    else:
-        zip_type = 'unknown'
-
-    return {
-        'type': zip_type,
-        'has_training_stats': has_training_stats,
-        'has_model': has_model,
-        'training_stats_path': training_stats_path,
-        'model_files': model_files,
-        'all_files': all_files,
-        'file_count': len(all_files)
-    }
-
-
-def display_zip_analysis(analysis):
-    """Affiche l'analyse du ZIP de manière user-friendly."""
-
-    zip_type = analysis['type']
-
-    # Emoji et message selon le type
-    type_info = {
-        'stats': ('📊', 'ZIP de statistiques training', 'success'),
-        'model': ('🤖', 'ZIP de modèle RL (best_model.zip ou checkpoint)', 'info'),
-        'mixed': ('🎯', 'ZIP complet (modèle + stats)', 'success'),
-        'unknown': ('❓', 'Type de ZIP non reconnu', 'warning')
-    }
-
-    emoji, message, status = type_info.get(zip_type, ('❓', 'Unknown', 'warning'))
-
-    if status == 'success':
-        st.success(f"{emoji} **{message}**")
-    elif status == 'info':
-        st.info(f"{emoji} **{message}**")
-    else:
-        st.warning(f"{emoji} **{message}**")
-
-    # Afficher les détails dans un expander
-    with st.expander(f"📦 Contenu du ZIP ({analysis['file_count']} fichiers)"):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.write("**Détection:**")
-            st.write(f"✅ training_stats.json trouvé" if analysis['has_training_stats'] else "❌ Pas de training_stats.json")
-            st.write(f"✅ Modèle RL détecté" if analysis['has_model'] else "❌ Pas de modèle RL")
-
-        with col2:
-            st.write("**Fichiers détectés:**")
-            if analysis['has_training_stats']:
-                st.code(analysis['training_stats_path'], language=None)
-            if analysis['has_model']:
-                st.write(f"🤖 {len(analysis['model_files'])} fichiers modèle")
-
-        st.write("**Liste complète:**")
-        for f in analysis['all_files'][:20]:  # Limite à 20 pour éviter le spam
-            st.text(f"  • {f}")
-        if len(analysis['all_files']) > 20:
-            st.text(f"  ... et {len(analysis['all_files']) - 20} autres fichiers")
-
-
-def load_data_from_zip(uploaded_file):
-    """
-    🆕 VERSION UNIVERSELLE - Charge les données depuis N'IMPORTE QUEL ZIP.
-
-    Gère automatiquement:
-    - ZIP avec training_stats.json (direct ou dans sous-dossier)
-    - ZIP de modèle RL (best_model.zip, checkpoints)
-    - ZIP mixtes (contient les deux)
-    - ZIP avec structure de dossiers complexe
+    Détecte automatiquement le type de CSV basé sur ses colonnes
 
     Args:
-        uploaded_file: Fichier uploadé via st.file_uploader
+        df: DataFrame pandas
+        filename: Nom du fichier
 
     Returns:
-        Liste de checkpoints ou None si erreur
+        Type de CSV ('training_report', 'trades', 'checkpoints', 'metrics', 'unknown')
     """
-    import zipfile
-    import io
+    cols = set(df.columns.str.lower())
 
-    try:
-        # Lire le ZIP
-        zip_bytes = io.BytesIO(uploaded_file.read())
+    # Training Report (détaillé)
+    if {'timesteps', 'roi_pct', 'sharpe', 'sortino', 'calmar', 'equity', 'balance'}.issubset(cols):
+        return 'training_report'
 
-        with zipfile.ZipFile(zip_bytes, 'r') as zip_ref:
-            # 🆕 Analyser le contenu
-            analysis = analyze_zip_content(zip_ref)
+    # Trades Details
+    if {'entry_price', 'exit_price', 'side', 'pnl', 'pnl_pct'}.issubset(cols):
+        return 'trades'
 
-            # 🆕 Afficher l'analyse
-            display_zip_analysis(analysis)
+    # Checkpoints Analysis
+    if {'steps', 'file', 'equity', 'roi_pct', 'composite_score'}.issubset(cols):
+        return 'checkpoints'
 
-            # 🆕 Gérer selon le type détecté
-            if analysis['type'] == 'stats' or analysis['type'] == 'mixed':
-                # Extraire training_stats.json
-                training_stats_path = analysis['training_stats_path']
+    # Quick Metrics (simple)
+    if {'timestamp', 'timesteps', 'roi_pct', 'equity'}.issubset(cols):
+        return 'metrics'
 
-                st.info(f"📂 Extraction de: `{training_stats_path}`")
+    # Backtest Results
+    if {'agent', 'roi', 'sharpe_ratio', 'max_drawdown'}.issubset(cols):
+        return 'backtest'
 
-                with zip_ref.open(training_stats_path) as json_file:
-                    data = json.load(json_file)
+    # Feature Importance (SHAP)
+    if 'feature' in cols and ('importance' in cols or 'shap_value' in cols):
+        return 'features'
 
-                    # Validation
-                    if not isinstance(data, list):
-                        st.error("❌ Format JSON invalide (doit être une liste de checkpoints)")
-                        return None
+    # TensorBoard Exports
+    if 'step' in cols and any(x in cols for x in ['value', 'loss', 'reward']):
+        return 'tensorboard'
 
-                    st.success(f"✅ **{len(data):,} checkpoints** chargés avec succès!")
-
-                    # Stats rapides
-                    if len(data) > 0:
-                        last_checkpoint = data[-1]
-                        timestep = last_checkpoint.get('timestep', 0)
-                        roi = last_checkpoint.get('roi', 0)
-                        sharpe = last_checkpoint.get('sharpe_ratio', 0)
-
-                        timestep_str = f"{timestep:,}" if isinstance(timestep, (int, float)) else str(timestep)
-                        st.info(f"📊 Dernier checkpoint: **{timestep_str} steps** | "
-                               f"ROI: **{roi:.2f}%** | "
-                               f"Sharpe: **{sharpe:.2f}**")
-
-                    return data
-
-            elif analysis['type'] == 'model':
-                # C'est un ZIP de modèle uniquement
-                st.warning("⚠️ Ce ZIP contient uniquement un modèle RL (pas de stats)")
-                st.info("💡 **Solutions:**")
-                st.write("1️⃣ Uploadez le fichier `training_stats.json` correspondant")
-                st.write("2️⃣ Ou cherchez le fichier dans: `AGENT/AGENT 7/training_stats.json`")
-                st.write("3️⃣ Ou créez un ZIP qui contient les deux fichiers")
-
-                # Afficher où le modèle a probablement été créé
-                if uploaded_file.name:
-                    st.code(f"💡 Si votre modèle est: {uploaded_file.name}\n"
-                           f"Les stats devraient être dans le même dossier!",
-                           language=None)
-
-                return None
-
-            else:
-                # Type inconnu
-                st.error("❌ Impossible de trouver training_stats.json dans ce ZIP")
-                st.warning("💡 Le ZIP doit contenir un fichier nommé `training_stats.json` "
-                          "(à la racine ou dans un sous-dossier)")
-                return None
-
-    except zipfile.BadZipFile:
-        st.error("❌ **Fichier ZIP corrompu** ou invalide")
-        st.info("💡 Vérifiez que le fichier est bien un ZIP valide")
-        return None
-
-    except json.JSONDecodeError as e:
-        st.error(f"❌ **Erreur JSON**: Le fichier training_stats.json est mal formé")
-        st.code(f"Détails: {str(e)}", language=None)
-        return None
-
-    except Exception as e:
-        st.error(f"❌ **Erreur inattendue**: {type(e).__name__}")
-        st.code(str(e), language=None)
-        st.info("💡 Contactez le support si l'erreur persiste")
-        return None
-
-def load_data():
-    """Charge les données depuis training_stats.json (local ou ZIP uploadé)"""
-    # En priorité, chercher le fichier local
-    json_path = Path(__file__).parent / "training_stats.json"
-
-    if json_path.exists():
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return data
-        except Exception as e:
-            st.error(f"❌ Erreur chargement JSON local: {e}")
-            return None
-
-    # Si pas de fichier local, retourner None (le uploader sera proposé)
-    return None
-
-def load_top_features():
-    """Charge les top 100 features depuis le fichier de configuration"""
-    # Plusieurs chemins possibles pour trouver le fichier
-    possible_paths = [
-        Path(__file__).parent / "top100_features_agent7.txt",  # Même dossier que streamlit_dashboard.py
-        Path("C:/Users/lbye3/Desktop/GoldRL/output/feature_selection/top100_features_agent7.txt"),  # Chemin absolu principal
-        Path("C:/Users/lbye3/Desktop/GoldRL/AGENT/AGENT 7/ENTRAINEMENT/top100_features_agent7.txt")  # Backup
-    ]
-
-    for features_path in possible_paths:
-        if features_path.exists():
-            try:
-                with open(features_path, 'r', encoding='utf-8') as f:
-                    # Filtrer les lignes de commentaires et lignes vides
-                    features = [line.strip() for line in f.readlines()
-                               if line.strip() and not line.strip().startswith('#')]
-                return features
-            except Exception as e:
-                st.warning(f"⚠️ Erreur lecture features: {e}")
-                return None
-
-    return None
+    return 'unknown'
 
 
-def load_model_feature_importance():
+def load_all_csvs(directory: str) -> Dict[str, List[Tuple[str, pd.DataFrame]]]:
     """
-    🔴 LIVE: Charge le modèle RL actuel et extrait l'importance réelle de TOUTES les features (211)
+    Charge tous les CSV d'un répertoire et les catégorise
 
-    Méthode professionnelle (Hedge Fund Grade):
-    1. Charge best_model.zip (modèle en cours de training)
-    2. Extrait les poids de la première couche du policy network
-    3. Calcule l'importance absolue moyenne pour chaque feature
-    4. Génère noms pour TOUTES les features (pas juste top 100)
-    5. Classe par importance décroissante
+    Args:
+        directory: Chemin du répertoire
 
     Returns:
-        tuple: (features_list, is_live, timestamp, error_msg, importance_scores)
-            - features_list: Liste des features classées par importance (TOUTES)
-            - is_live: True si analyse du modèle réussie, False si fallback statique
-            - timestamp: datetime de l'analyse
-            - error_msg: Message d'erreur si échec, None sinon
-            - importance_scores: Dict {feature: score} ou None
+        Dictionnaire {type: [(filename, dataframe), ...]}
     """
-    analysis_time = datetime.now()
-
-    # Chemins possibles pour le modèle (ordre de priorité)
-    model_paths = [
-        Path("C:/Users/lbye3/Desktop/GoldRL/AGENT/AGENT 7/ENTRAINEMENT/models/best_model.zip"),
-        Path(__file__).parent / "models" / "best_model.zip",
-        Path("C:/Users/lbye3/Desktop/GoldRL/AGENT/AGENT 7/ENTRAINEMENT/models/agent7_1.5M_final.zip"),
-    ]
-
-    # Chercher le modèle
-    model_path = None
-    for path in model_paths:
-        if path.exists():
-            model_path = path
-            break
-
-    if not model_path:
-        # Fallback: essayer de charger les features statiques
-        static_features = load_top_features()
-        if static_features:
-            return (static_features, False, analysis_time,
-                    "❌ Aucun modèle trouvé (best_model.zip ou agent7_1.5M_final.zip)",
-                    None)
-        return (None, False, analysis_time,
-                "❌ Aucun modèle trouvé ET fichier features statiques introuvable",
-                None)
-
-    try:
-        # Tentative d'import de stable-baselines3
-        try:
-            from stable_baselines3 import PPO
-        except ImportError:
-            static_features = load_top_features()
-            if static_features:
-                return (static_features, False, analysis_time,
-                        "⚠️ stable-baselines3 non disponible - Affichage features statiques",
-                        None)
-            return (None, False, analysis_time,
-                    "⚠️ stable-baselines3 non disponible ET pas de features statiques",
-                    None)
-
-        # Charger le modèle PPO
-        try:
-            model = PPO.load(str(model_path))
-        except Exception as e:
-            static_features = load_top_features()
-            if static_features:
-                return (static_features, False, analysis_time,
-                        f"⚠️ Erreur chargement modèle: {str(e)[:100]}",
-                        None)
-            return (None, False, analysis_time,
-                    f"⚠️ Erreur chargement modèle: {str(e)[:100]}",
-                    None)
-
-        # Extraire les poids de la première couche du policy network
-        try:
-            # PPO utilise MlpPolicy avec architecture [obs_dim] -> [512] -> [512] -> [action_dim]
-            # On veut les poids de la première couche: [obs_dim, 512]
-            policy_net = model.policy.mlp_extractor.policy_net
-
-            # Premier layer weights: shape = [n_features, 512]
-            first_layer_weights = policy_net[0].weight.data.cpu().numpy()  # Shape: [512, n_features]
-            first_layer_weights = first_layer_weights.T  # Transpose: [n_features, 512]
-
-            # Calculer l'importance: moyenne des valeurs absolues sur tous les neurones
-            # Plus le poids est élevé (en absolu), plus la feature est importante
-            feature_importance = np.abs(first_layer_weights).mean(axis=1)  # Shape: [n_features]
-
-            n_features_total = len(feature_importance)
-
-            # Générer noms pour TOUTES les features
-            # Charger top100 comme mapping partiel (si existe)
-            static_features = load_top_features()
-
-            # Créer liste complète avec tous les noms
-            all_feature_names = []
-            if static_features and len(static_features) > 0:
-                # Utiliser noms statiques pour les 100 premières
-                all_feature_names.extend(static_features[:min(len(static_features), n_features_total)])
-                # Générer noms pour les features restantes (RL-specific: 101-211)
-                for i in range(len(static_features), n_features_total):
-                    # Features RL ajoutées après les 100 de base
-                    if i < 100 + 12:  # 100-111: Features RL standard
-                        rl_features = [
-                            'rl_last_action_0', 'rl_last_action_1', 'rl_last_action_2',
-                            'rl_regret_signal', 'rl_position_duration_norm',
-                            'rl_unrealized_pnl_ratio', 'rl_market_regime',
-                            'rl_hours_until_macro', 'rl_volatility_percentile',
-                            'rl_position_side', 'rl_recent_win_rate', 'rl_trade_similarity'
-                        ]
-                        idx = i - 100
-                        if idx < len(rl_features):
-                            all_feature_names.append(rl_features[idx])
-                        else:
-                            all_feature_names.append(f'feature_{i}')
-                    else:
-                        all_feature_names.append(f'feature_{i}')
-            else:
-                # Pas de mapping: générer noms génériques pour toutes
-                all_feature_names = [f'feature_{i}' for i in range(n_features_total)]
-
-            # Créer le dictionnaire {feature_name: importance_score}
-            importance_dict = {
-                feature: float(score)
-                for feature, score in zip(all_feature_names, feature_importance)
-            }
-
-            # Trier par importance décroissante
-            sorted_features = sorted(
-                importance_dict.items(),
-                key=lambda x: x[1],
-                reverse=True
-            )
-
-            # Extraire juste les noms de features (sans les scores pour l'affichage)
-            live_features_sorted = [feature for feature, score in sorted_features]
-
-            # Normaliser les scores pour affichage (0-100)
-            max_importance = max(importance_dict.values())
-            importance_dict_normalized = {
-                feature: (score / max_importance) * 100
-                for feature, score in importance_dict.items()
-            }
-
-            return (live_features_sorted, True, analysis_time, None, importance_dict_normalized)
-
-        except AttributeError as e:
-            static_features = load_top_features()
-            if static_features:
-                return (static_features, False, analysis_time,
-                        f"⚠️ Architecture modèle inattendue: {str(e)[:100]}",
-                        None)
-            return (None, False, analysis_time,
-                    f"⚠️ Architecture modèle inattendue: {str(e)[:100]}",
-                    None)
-        except Exception as e:
-            static_features = load_top_features()
-            if static_features:
-                return (static_features, False, analysis_time,
-                        f"⚠️ Erreur extraction poids: {str(e)[:100]}",
-                        None)
-            return (None, False, analysis_time,
-                    f"⚠️ Erreur extraction poids: {str(e)[:100]}",
-                    None)
-
-    except Exception as e:
-        # Catch-all pour erreurs inattendues
-        static_features = load_top_features()
-        if static_features:
-            return (static_features, False, analysis_time,
-                    f"⚠️ Erreur inattendue: {str(e)[:100]}",
-                    None)
-        return (None, False, analysis_time,
-                f"⚠️ Erreur inattendue: {str(e)[:100]}",
-                None)
-
-def calculate_streaks(trades):
-    """Calcule les séquences (streaks) de gains/pertes consécutifs"""
-    if not trades:
-        return {
-            'max_winning_streak': 0,
-            'max_losing_streak': 0,
-            'current_streak': 0,
-            'current_streak_type': 'N/A'
-        }
-
-    max_win_streak = 0
-    max_lose_streak = 0
-    current_streak = 0
-    current_type = None
-
-    for trade in trades:
-        # FIX 2025-11-12: PnL déjà en dollars - pas de division par 100
-        pnl = trade.get('pnl', 0)
-
-        if pnl > 0:  # Gain
-            if current_type == 'win':
-                current_streak += 1
-            else:
-                current_streak = 1
-                current_type = 'win'
-            max_win_streak = max(max_win_streak, current_streak)
-        elif pnl < 0:  # Perte
-            if current_type == 'loss':
-                current_streak += 1
-            else:
-                current_streak = 1
-                current_type = 'loss'
-            max_lose_streak = max(max_lose_streak, current_streak)
-        else:  # Break-even
-            current_streak = 0
-            current_type = None
-
-    return {
-        'max_winning_streak': max_win_streak,
-        'max_losing_streak': max_lose_streak,
-        'current_streak': abs(current_streak),
-        'current_streak_type': '✅ Gains' if current_type == 'win' else ('❌ Pertes' if current_type == 'loss' else 'N/A')
+    csv_data = {
+        'training_report': [],
+        'trades': [],
+        'checkpoints': [],
+        'metrics': [],
+        'backtest': [],
+        'features': [],
+        'tensorboard': [],
+        'unknown': []
     }
 
-def calculate_real_max_dd_unified(history):
-    """
-    Calcule le VRAI Max DD (% ET $) comme les hedge funds
-    = La plus grande perte depuis un peak HISTORIQUE
+    # Recherche récursive de tous les CSV
+    csv_files = glob.glob(os.path.join(directory, "**/*.csv"), recursive=True)
 
-    ⚠️ IMPORTANT: Parcourt TOUTE l'historique pour trouver le vrai max DD,
-    pas juste le dernier checkpoint (qui peut avoir récupéré depuis le max DD)
+    for csv_file in csv_files:
+        try:
+            df = pd.read_csv(csv_file)
+            filename = Path(csv_file).name
+            csv_type = detect_csv_type(df, filename)
+            csv_data[csv_type].append((filename, df, csv_file))
+        except Exception as e:
+            st.sidebar.warning(f"⚠️ Erreur chargement {Path(csv_file).name}: {str(e)}")
+            continue
+
+    return csv_data
+
+
+def load_uploaded_csv(uploaded_file) -> Tuple[str, pd.DataFrame]:
+    """
+    Charge un CSV uploadé et détecte son type
+
+    Args:
+        uploaded_file: Fichier Streamlit uploadé
 
     Returns:
-        dict: {
-            'max_dd_pct': float,  # Perte max en % depuis peak
-            'max_dd_dollar': float,  # Perte max en $ depuis peak
-            'peak_equity_at_dd': float,  # Equity au peak avant le DD
-            'equity_at_dd': float,  # Equity au point le plus bas (trough)
-            'timestep_at_dd': int  # Timestep où le max DD s'est produit
-        }
+        (type, dataframe)
     """
-    peak = 100000  # Capital initial
-    max_dd_dollar = 0
-    max_dd_pct = 0
-    peak_at_max_dd = 100000
-    equity_at_max_dd = 100000
-    timestep_at_max_dd = 0
+    df = pd.read_csv(uploaded_file)
+    csv_type = detect_csv_type(df, uploaded_file.name)
+    return csv_type, df
 
-    for checkpoint in history:
-        equity = checkpoint.get('equity', 100000)
-        timestep = checkpoint.get('timesteps', 0)
 
-        # Mettre à jour le peak si on atteint un nouveau sommet
-        if equity > peak:
-            peak = equity
+# ============================================================================
+# VISUALISATIONS PAR TYPE DE CSV
+# ============================================================================
 
-        # Calculer la perte depuis le peak (en $ et en %)
-        dd_dollar = peak - equity
-        dd_pct = (dd_dollar / peak * 100) if peak > 0 else 0
+def plot_training_report(df: pd.DataFrame, title: str = "Training Report"):
+    """Visualisation pour training_report.csv"""
 
-        # Garder le maximum (en $, le % suivra automatiquement)
-        if dd_dollar > max_dd_dollar:
-            max_dd_dollar = dd_dollar
-            max_dd_pct = dd_pct
-            peak_at_max_dd = peak
-            equity_at_max_dd = equity
-            timestep_at_max_dd = timestep
+    # Tri par timesteps
+    df = df.sort_values('timesteps')
 
-    return {
-        'max_dd_pct': max_dd_pct,
-        'max_dd_dollar': max_dd_dollar,
-        'peak_equity_at_dd': peak_at_max_dd,
-        'equity_at_dd': equity_at_max_dd,
-        'timestep_at_dd': timestep_at_max_dd
-    }
+    # Création de sous-graphiques
+    fig = make_subplots(
+        rows=3, cols=2,
+        subplot_titles=(
+            "📈 Equity Curve", "📊 ROI %",
+            "💎 Sharpe & Sortino Ratio", "📉 Max Drawdown %",
+            "🎯 Win Rate & Profit Factor", "🔥 Diversity & Entropy"
+        ),
+        vertical_spacing=0.12,
+        horizontal_spacing=0.1
+    )
 
-def calculate_metrics(data):
-    """Calcule toutes les métriques depuis les données"""
-    # Vérification robuste de la structure des données
-    if not data:
-        return None
-
-    # Le JSON est un tableau de checkpoints, pas un objet avec 'history'
-    if not isinstance(data, list):
-        st.error(f"❌ Format de données invalide. Type attendu: list, Type reçu: {type(data)}")
-        return None
-
-    if len(data) == 0:
-        st.warning("⚠️ Aucun checkpoint - training pas encore démarré")
-        return None
-
-    # Le dernier checkpoint
-    latest = data[-1]
-
-    # Récupération des trades uniques
-    all_trades = []
-    seen_trades = set()
-
-    for checkpoint in data:
-        for trade in checkpoint.get('trades', []):
-            # Clé unique pour déduplication
-            key = (
-                trade.get('entry_price', 0),
-                trade.get('exit_price', 0),
-                trade.get('size', 0),
-                trade.get('pnl', 0)
-            )
-            if key not in seen_trades:
-                seen_trades.add(key)
-                all_trades.append(trade)
-
-    # Récupération des statistiques précalculées (DÉJÀ NORMALISÉES dans le JSON)
-    trading_stats = latest.get('trading_stats', {})
-    institutional_metrics = latest.get('institutional_metrics', {})
-
-    # Total PnL depuis equity
-    total_pnl = latest['equity'] - 100000
-    pnl_method = "✅ Equity delta"
-
-    # Récupération des trades (PnL déjà en dollars)
-    # FIX 2025-11-12: Pas de normalisation nécessaire
-    winning_trades = [t for t in all_trades if t.get('pnl', 0) > 0]
-    losing_trades = [t for t in all_trades if t.get('pnl', 0) < 0]
-
-    # Métriques de trading (du JSON, PAS de recalcul)
-    total_trades = trading_stats.get('total_trades', len(all_trades))
-    win_rate = trading_stats.get('win_rate', 0)
-    profit_factor = trading_stats.get('profit_factor', 0)
-
-    # Avg Win/Loss depuis JSON (DÉJÀ EN DOLLARS - PAS de division nécessaire)
-    # FIX 2025-11-12: Les valeurs dans trading_stats sont déjà en $, pas multipliées par 100
-    avg_win = trading_stats.get('avg_win', 0)  # Déjà en dollars (ex: 360.90)
-    avg_loss = trading_stats.get('avg_loss', 0)  # Déjà en dollars (ex: 372.58)
-
-    # Max Win/Loss calculés depuis les trades (DÉJÀ EN DOLLARS - PAS de division)
-    # FIX 2025-11-12: Même bug que avg_win/avg_loss - les PnL dans trades[] sont déjà en $
-    max_win = max([t['pnl'] for t in winning_trades], default=0)
-    max_loss = min([t['pnl'] for t in losing_trades], default=0)
-
-    # Max RR (meilleur gain / pire perte) - Ratio Risk/Reward réel
-    # max_loss est négatif, donc on prend sa valeur absolue
-    max_rr = max_win / abs(max_loss) if max_loss < 0 else 0
-
-    # ROI depuis JSON (déjà en %)
-    roi = latest.get('roi_pct', 0)
-
-    # Métriques institutionnelles
-    sharpe = institutional_metrics.get('sharpe_ratio', 0)
-    sortino = institutional_metrics.get('sortino_ratio', 0)
-    calmar = institutional_metrics.get('calmar_ratio', 0)
-    var_95 = institutional_metrics.get('var_95', 0) * 100  # Convertir en %
-    cvar_95 = institutional_metrics.get('cvar_95', 0) * 100  # Convertir en %
-
-    # ⭐ CALCUL HEDGE FUND: Max DD (% ET $) HISTORIQUE UNIFIÉ
-    # Parcourt TOUTE l'historique pour trouver le vrai max DD
-    # (PAS juste le dernier checkpoint qui peut avoir récupéré)
-    dd_info = calculate_real_max_dd_unified(data)
-    max_dd_pct = dd_info['max_dd_pct']
-    max_dd_dollar = dd_info['max_dd_dollar']
-    peak_equity_at_dd = dd_info['peak_equity_at_dd']
-    equity_at_dd = dd_info['equity_at_dd']
-    timestep_at_dd = dd_info['timestep_at_dd']
-
-    # Equity actuelle (pour calcul de recovery)
-    current_equity = latest.get('equity', 100000)
-
-    # Calcul des streaks (séquences)
-    streaks = calculate_streaks(all_trades)
-
-    # Expectancy (gain moyen par trade)
-    expectancy = (avg_win * (win_rate / 100)) - (abs(avg_loss) * ((100 - win_rate) / 100))
-
-    # Recovery Factor (Total Profit / Max DD)
-    recovery_factor = total_pnl / max_dd_dollar if max_dd_dollar > 0 else 0
-
-    # Avg RR (Risk/Reward moyen)
-    avg_rr = avg_win / abs(avg_loss) if avg_loss < 0 else 0
-
-    return {
-        'timesteps': latest.get('timesteps', 0),
-        'equity': latest['equity'],
-        'total_pnl': total_pnl,
-        'pnl_method': pnl_method,
-        'roi': roi,
-        'sharpe': sharpe,
-        'sortino': sortino,
-        'calmar': calmar,
-        'var_95': var_95,
-        'cvar_95': cvar_95,
-        'max_dd_pct': max_dd_pct,
-        'max_dd_dollar': max_dd_dollar,
-        'peak_equity_at_dd': peak_equity_at_dd,  # ⭐ HEDGE FUND: Equity au peak
-        'equity_at_dd': equity_at_dd,  # ⭐ HEDGE FUND: Equity au trough (point bas)
-        'timestep_at_dd': timestep_at_dd,  # ⭐ HEDGE FUND: Timestep du max DD
-        'total_trades': total_trades,
-        'win_rate': win_rate,
-        'profit_factor': profit_factor,
-        'avg_win': avg_win,
-        'avg_loss': avg_loss,
-        'max_win': max_win,
-        'max_loss': max_loss,
-        'max_rr': max_rr,
-        'avg_rr': avg_rr,
-        'expectancy': expectancy,
-        'recovery_factor': recovery_factor,
-        'winning_trades': len(winning_trades),
-        'losing_trades': len(losing_trades),
-        'max_winning_streak': streaks['max_winning_streak'],
-        'max_losing_streak': streaks['max_losing_streak'],
-        'current_streak': streaks['current_streak'],
-        'current_streak_type': streaks['current_streak_type'],
-        'all_trades': all_trades,
-        'history': data  # data est déjà le tableau complet de checkpoints
-    }
-
-def create_equity_curve(history):
-    """Crée la courbe d'équité avec Balance (réalisé) et Equity (avec positions flottantes)"""
-    # Trier les données par timesteps pour assurer une courbe propre
-    sorted_history = sorted(history, key=lambda h: h.get('timesteps', 0))
-
-    timesteps = [h.get('timesteps', 0) for h in sorted_history]
-    balance = [h.get('balance', 100000) for h in sorted_history]
-    equity = [h.get('equity', 100000) for h in sorted_history]
-
-    # Identifier les points où il y a une position ouverte (différence > $1)
-    has_position = [abs(e - b) > 1 for e, b in zip(equity, balance)]
-    positions_count = sum(has_position)
-    total_checkpoints = len(has_position)
-
-    fig = go.Figure()
-
-    # Balance (positions fermées) - TRACER EN PREMIER (dessous si superposition)
+    # 1. Equity Curve
     fig.add_trace(go.Scatter(
-        x=timesteps,
-        y=balance,
-        mode='lines',
-        name=f'✅ Balance (Réalisé)',
-        line=dict(color='#FF1493', width=5, dash='solid'),  # ROSE FUSHIA - ÉPAIS
-        hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Balance</b>: $%{y:,.2f}<br><i>(Positions fermées seulement)</i><extra></extra>',
-        opacity=1.0
-    ))
+        x=df['timesteps'], y=df['equity'],
+        name='Equity', line=dict(color='#00d4ff', width=2),
+        fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.1)'
+    ), row=1, col=1)
 
-    # Equity (avec positions flottantes) - TRACER EN SECOND (dessus si superposition)
+    # 2. ROI %
     fig.add_trace(go.Scatter(
-        x=timesteps,
-        y=equity,
-        mode='lines',
-        name=f'💰 Equity (Total) - {positions_count}/{total_checkpoints} checkpoints avec position',
-        line=dict(color='#00FF00', width=2, dash='dash'),  # VERT FLUO - FIN et TIRETS
-        hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Equity</b>: $%{y:,.2f}<br><i>(Balance + positions ouvertes)</i><extra></extra>',
-        opacity=1.0
-    ))
+        x=df['timesteps'], y=df['roi_pct'],
+        name='ROI %', line=dict(color='#00ff88', width=2),
+        fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.1)'
+    ), row=1, col=2)
 
-    # NOUVEAU: Ajouter des marqueurs UNIQUEMENT sur les points avec position ouverte
-    position_timesteps = [t for t, has_pos in zip(timesteps, has_position) if has_pos]
-    position_equity = [e for e, has_pos in zip(equity, has_position) if has_pos]
-    position_balance = [b for b, has_pos in zip(balance, has_position) if has_pos]
-    position_diff = [e - b for e, b in zip(position_equity, position_balance)]
+    # 3. Sharpe & Sortino
+    fig.add_trace(go.Scatter(
+        x=df['timesteps'], y=df['sharpe'],
+        name='Sharpe', line=dict(color='#ff00ff', width=2)
+    ), row=2, col=1)
+    fig.add_trace(go.Scatter(
+        x=df['timesteps'], y=df['sortino'],
+        name='Sortino', line=dict(color='#ffaa00', width=2, dash='dash')
+    ), row=2, col=1)
 
-    if position_timesteps:
+    # 4. Max Drawdown
+    fig.add_trace(go.Scatter(
+        x=df['timesteps'], y=df['max_dd_pct'],
+        name='Max DD %', line=dict(color='#ff0044', width=2),
+        fill='tozeroy', fillcolor='rgba(255, 0, 68, 0.1)'
+    ), row=2, col=2)
+    # Ligne FTMO 10%
+    fig.add_hline(y=10, line_dash="dash", line_color="red",
+                  annotation_text="FTMO Limit 10%", row=2, col=2)
+
+    # 5. Win Rate & Profit Factor
+    if 'win_rate' in df.columns:
         fig.add_trace(go.Scatter(
-            x=position_timesteps,
-            y=position_equity,
-            mode='markers',
-            name=f'🔴 Position Ouverte ({len(position_timesteps)} points)',
-            marker=dict(color='#FF0000', size=14, symbol='circle', line=dict(color='white', width=2)),  # PLUS GROS + BORDURE BLANCHE
-            hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Equity</b>: $%{y:,.2f}<br><b>Unrealized PnL</b>: $%{customdata:,.2f}<extra></extra>',
-            customdata=position_diff,
-            opacity=1.0  # Opacité maximale
-        ))
+            x=df['timesteps'], y=df['win_rate'],
+            name='Win Rate', line=dict(color='#00ff88', width=2)
+        ), row=3, col=1)
+    if 'profit_factor' in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df['timesteps'], y=df['profit_factor'],
+            name='Profit Factor', line=dict(color='#00d4ff', width=2),
+            yaxis='y2'
+        ), row=3, col=1)
 
-    fig.add_hline(y=100000, line_dash="dash", line_color="gray", annotation_text="Initial Capital ($100,000)", line_width=2)
-
-    # Annotation explicative
-    annotation_text = f"<b>🔴 Points rouges = Position ouverte ({positions_count}/{total_checkpoints} checkpoints, {positions_count/total_checkpoints*100:.1f}%)</b><br>Si lignes superposées = Pas de position à ce moment-là"
-
-    fig.update_layout(
-        title="Courbe d'Équité - Balance Réalisée vs Equity Totale",  # TITRE SIMPLE
-        xaxis_title="Timesteps",
-        yaxis_title="Capital ($)",
-        hovermode='closest',
-        template='plotly_dark',
-        height=700,  # HAUTEUR MAXIMALE pour avoir de la place
-        margin=dict(t=140, b=180),  # MARGES MAXIMALES: top ET bottom très grands
-        showlegend=True,
-        legend=dict(
-            yanchor="top",
-            y=1.15,  # TRÈS AU-DESSUS du graphique (en dehors)
-            xanchor="right",
-            x=0.99,  # DROITE
-            bgcolor='rgba(0,0,0,0.9)',
-            bordercolor='white',
-            borderwidth=2,
-            font=dict(size=9, color='white')  # Police plus petite
-        ),
-        annotations=[
-            dict(
-                text=annotation_text,
-                xref="paper", yref="paper",
-                x=0.5, y=-0.22,  # TRÈS BAS grâce à margin bottom=180
-                showarrow=False,
-                font=dict(size=9, color='#777777', family='Arial'),  # ENCORE PLUS DISCRET
-                xanchor='center',
-                align='center'
-            )
-        ]
-    )
-
-    return fig
-
-def create_drawdown_chart(history):
-    """Crée le graphique de drawdown (calculé depuis le peak equity, pas $100K initial)"""
-    # Trier les données par timesteps
-    sorted_history = sorted(history, key=lambda h: h.get('timesteps', 0))
-
-    timesteps = [h.get('timesteps', 0) for h in sorted_history]
-    # max_drawdown_pct est déjà en pourcentage dans le JSON, NE PAS multiplier
-    dd_pct = [h.get('max_drawdown_pct', 0) for h in sorted_history]
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=timesteps,
-        y=dd_pct,
-        mode='lines+markers',
-        name='Max DD %',
-        line=dict(color='#FF6B6B', width=3),
-        marker=dict(size=4),
-        fill='tozeroy',
-        fillcolor='rgba(255, 107, 107, 0.2)',
-        hovertemplate='<b>Timestep</b>: %{x:,}<br><b>Max DD</b>: %{y:.2f}%<br><i>(depuis le peak equity)</i><extra></extra>'
-    ))
-
-    fig.add_hline(y=10, line_dash="dash", line_color="red", annotation_text="FTMO Limit (10%)", line_width=2)
+    # 6. Diversity & Entropy
+    if 'diversity_score' in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df['timesteps'], y=df['diversity_score'],
+            name='Diversity', line=dict(color='#ff00ff', width=2)
+        ), row=3, col=2)
+    if 'policy_entropy' in df.columns:
+        fig.add_trace(go.Scatter(
+            x=df['timesteps'], y=df['policy_entropy'],
+            name='Entropy', line=dict(color='#ffaa00', width=2, dash='dash')
+        ), row=3, col=2)
 
     fig.update_layout(
-        title="Maximum Drawdown (depuis Peak Equity)",
-        xaxis_title="Timesteps",
-        yaxis_title="Max DD (%)",
-        hovermode='x unified',
-        template='plotly_dark',
-        height=700,  # MÊME HAUTEUR que equity curve
-        margin=dict(t=140, b=180),  # MARGES COHÉRENTES avec equity curve
+        title=f"<b>{title}</b>",
+        height=1000,
         showlegend=True,
-        annotations=[
-            dict(
-                text="<b>⚠️ DD = (Peak - Current) / Peak</b>, PAS depuis $100K initial",
-                xref="paper", yref="paper",
-                x=0.5, y=-0.22,  # MÊME POSITION que equity curve
-                showarrow=False,
-                font=dict(size=9, color='#777777', family='Arial'),  # MÊME STYLE que equity curve
-                xanchor='center'
-            )
-        ]
-    )
-
-    return fig
-
-def create_sharpe_chart(history):
-    """Crée le graphique du Sharpe Ratio"""
-    # Trier les données par timesteps
-    sorted_history = sorted(history, key=lambda h: h.get('timesteps', 0))
-
-    timesteps = [h.get('timesteps', 0) for h in sorted_history]
-    # Sharpe Ratio est dans institutional_metrics, pas directement dans le checkpoint
-    sharpe = [h.get('institutional_metrics', {}).get('sharpe_ratio', 0) for h in sorted_history]
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=timesteps,
-        y=sharpe,
-        mode='lines+markers',
-        name='Sharpe Ratio',
-        line=dict(color='#51CF66', width=3),
-        marker=dict(size=4)
-    ))
-
-    # Lignes de référence SANS annotation_text (plus propre)
-    fig.add_hline(y=0, line_dash="dot", line_color="gray", line_width=1)
-    fig.add_hline(y=1.0, line_dash="dash", line_color="yellow", line_width=2)
-    fig.add_hline(y=1.5, line_dash="dash", line_color="green", line_width=2)
-
-    fig.update_layout(
-        title="Sharpe Ratio Evolution",
-        xaxis_title="Timesteps",
-        yaxis_title="Sharpe Ratio",
-        hovermode='x unified',
         template='plotly_dark',
-        height=600,  # Plus haut pour avoir de la place
-        margin=dict(t=100, b=120),  # Marges pour annotation
-        showlegend=True,
-        annotations=[
-            dict(
-                text="<b>Lignes de référence :</b> Sharpe = 0 (neutre) | 1.0 (target) | 1.5+ (excellent hedge fund grade)",
-                xref="paper", yref="paper",
-                x=0.5, y=-0.15,
-                showarrow=False,
-                font=dict(size=10, color='#999999', family='Arial'),
-                xanchor='center'
-            )
-        ]
+        hovermode='x unified'
     )
 
-    return fig
+    st.plotly_chart(fig, use_container_width=True)
 
-def create_pnl_distribution(trades):
-    """Crée l'histogramme de distribution des PnL (filtre les trades < $50 pour clarté)"""
-    # FIX 2025-11-12: PnL déjà en dollars - pas de division par 100
-    all_pnls = [t.get('pnl', 0) for t in trades]
-
-    # Filtrer les trades avec PnL insignifiant (< $50) - bruit d'exploration RL
-    MIN_PNL_THRESHOLD = 50.0  # $50 (équivalent à 0.50 après division par 100)
-    pnls = [p for p in all_pnls if abs(p) >= MIN_PNL_THRESHOLD]
-
-    # Séparer gains et pertes pour coloration distincte
-    gains = [p for p in pnls if p > 0]
-    losses = [p for p in pnls if p < 0]
-
-    fig = go.Figure()
-
-    # Histogram des pertes (ROUGE)
-    if losses:
-        fig.add_trace(go.Histogram(
-            x=losses,
-            name='❌ Pertes',
-            marker=dict(color='#FF4444', opacity=0.7),
-            nbinsx=30,
-            hovertemplate='<b>PnL</b>: $%{x:.2f}<br><b>Trades</b>: %{y}<extra></extra>'
-        ))
-
-    # Histogram des gains (VERT)
-    if gains:
-        fig.add_trace(go.Histogram(
-            x=gains,
-            name='✅ Gains',
-            marker=dict(color='#00FF7F', opacity=0.7),
-            nbinsx=30,
-            hovertemplate='<b>PnL</b>: $%{x:.2f}<br><b>Trades</b>: %{y}<extra></extra>'
-        ))
-
-    # Ligne verticale à 0
-    fig.add_vline(x=0, line_dash="dash", line_color="white", line_width=2, annotation_text="Break-even")
-
-    fig.update_layout(
-        title=f"Distribution des PnL par Trade (filtre > ${MIN_PNL_THRESHOLD:.2f})",
-        xaxis_title="PnL ($)",
-        yaxis_title="Nombre de trades",
-        template='plotly_dark',
-        height=400,
-        barmode='overlay',
-        showlegend=True,
-        legend=dict(
-            yanchor="top",
-            y=0.99,
-            xanchor="right",
-            x=0.99,
-            bgcolor='rgba(0,0,0,0.5)',
-            bordercolor='white',
-            borderwidth=1
-        ),
-        annotations=[
-            dict(
-                text=f"<i>Total: {len(pnls)} trades (exclus {len(all_pnls) - len(pnls)} trades < ${MIN_PNL_THRESHOLD:.2f})</i>",
-                xref="paper", yref="paper",
-                x=0.5, y=-0.15,
-                showarrow=False,
-                font=dict(size=10, color='gray')
-            )
-        ]
-    )
-
-    return fig
-
-# Interface principale
-st.title("📊 Agent 7 - Training Dashboard")
-st.markdown("**Monitoring en temps réel - PPO Momentum Trader H1**")
-
-# Sidebar avec contrôles
-with st.sidebar:
-    st.header("⚙️ Contrôles")
-
-    auto_refresh = st.checkbox("Auto-refresh", value=True)
-
-    if auto_refresh:
-        refresh_interval = st.slider("Intervalle (secondes)", 5, 60, 10)
-
-    st.markdown("---")
-    st.markdown("### 📝 Informations")
-    st.markdown(f"**Dernière mise à jour**: {datetime.now().strftime('%H:%M:%S')}")
-
-    if st.button("🔄 Rafraîchir maintenant"):
-        st.rerun()
-
-# === FILE UPLOADER POUR ZIP (TOUJOURS VISIBLE) ===
-# Initialiser session_state pour stocker les données uploadées
-if 'uploaded_data' not in st.session_state:
-    st.session_state.uploaded_data = None
-if 'use_uploaded' not in st.session_state:
-    st.session_state.use_uploaded = False
-
-# File uploader TOUJOURS visible (dans la sidebar)
-with st.sidebar:
-    st.markdown("---")
-    st.markdown("### 📦 Upload Données")
-
-    uploaded_file = st.file_uploader(
-        "📤 Uploadez training_stats.zip",
-        type=['zip'],
-        help="ZIP contenant training_stats.json"
-    )
-
-    if uploaded_file is not None:
-        with st.spinner("⏳ Extraction..."):
-            loaded_data = load_data_from_zip(uploaded_file)
-
-            if loaded_data is not None:
-                st.session_state.uploaded_data = loaded_data
-                st.session_state.use_uploaded = True
-                st.success(f"✅ {len(loaded_data):,} checkpoints")
-                st.rerun()
-
-    # Boutons de contrôle si données uploadées disponibles
-    if st.session_state.uploaded_data is not None:
-        if st.button("🗑️ Effacer ZIP"):
-            st.session_state.uploaded_data = None
-            st.session_state.use_uploaded = False
-            st.rerun()
-
-# Chargement des données
-data = None
-
-# Priorité aux données uploadées si disponibles
-if st.session_state.use_uploaded and st.session_state.uploaded_data is not None:
-    data = st.session_state.uploaded_data
-    st.info(f"📦 **Données ZIP uploadées** : {len(data):,} checkpoints")
-else:
-    # Sinon essayer le fichier local
-    data = load_data()
-    if data is not None:
-        st.info(f"📁 **Données fichier local** : {len(data):,} checkpoints")
-
-# Si toujours pas de données, afficher instructions
-if data is None:
-    st.warning("⚠️ **Aucune donnée disponible**")
-    st.markdown("👈 **Uploadez training_stats.zip** via la sidebar")
-    st.markdown("---")
-    st.markdown("### 🎯 Comment faire")
-    st.markdown("1. Local : `python create_training_zip.py`")
-    st.markdown("2. Upload le fichier ZIP via sidebar ←")
-    st.markdown("3. Dashboard se charge automatiquement")
-    st.stop()
-
-# Calcul des métriques
-metrics = calculate_metrics(data)
-
-if metrics is None:
-    st.error("❌ Impossible de calculer les métriques (données vides)")
-    st.stop()
-
-# === SECTION 1: OVERVIEW ===
-st.header("💰 Vue d'ensemble")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric(
-        label="Timesteps",
-        value=f"{metrics['timesteps']:,}",
-        delta=f"{metrics['timesteps']/1_500_000*100:.1f}% de 1.5M"
-    )
-
-with col2:
-    st.metric(
-        label="Equity",
-        value=f"${metrics['equity']:,.2f}",
-        delta=f"${metrics['total_pnl']:,.2f}"
-    )
-
-with col3:
-    st.metric(
-        label="ROI",
-        value=f"{metrics['roi']:.2f}%",
-        delta="✅ Profitable" if metrics['roi'] > 0 else "❌ Perte"
-    )
-
-with col4:
-    st.metric(
-        label="Total Trades",
-        value=f"{metrics['total_trades']:,}"
-    )
-
-st.info(f"**Méthode calcul Total PnL**: {metrics['pnl_method']}")
-
-# === SECTION 2: PERFORMANCE ===
-st.header("📈 Performance")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric(
-        label="Win Rate",
-        value=f"{metrics['win_rate']:.1f}%",
-        delta="✅ Bon" if metrics['win_rate'] > 50 else "⚠️ Faible"
-    )
-
-with col2:
-    st.metric(
-        label="Profit Factor",
-        value=f"{metrics['profit_factor']:.2f}",
-        delta="✅ Excellent" if metrics['profit_factor'] > 1.5 else "⚠️ Moyen"
-    )
-
-with col3:
-    sharpe_value = metrics['sharpe']
-    if sharpe_value > 1.5:
-        sharpe_delta = "✅ Excellent"
-    elif sharpe_value > 1.0:
-        sharpe_delta = "✅ Bon"
-    elif sharpe_value > 0:
-        sharpe_delta = "⚠️ Faible"
-    else:
-        sharpe_delta = "❌ Négatif"
-
-    st.metric(
-        label="Sharpe Ratio",
-        value=f"{sharpe_value:.2f}",
-        delta=sharpe_delta
-    )
-
-with col4:
-    st.metric(
-        label="Max RR",
-        value=f"{metrics['max_rr']:.2f}R"
-    )
-
-# ⭐ LIGNE 2: MÉTRIQUES DE RISQUE DANS PERFORMANCE (AU DÉBUT)
-st.markdown("---")
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    # Max DD % dès le début
-    peak_equity_at_dd = metrics['peak_equity_at_dd']
-    equity_at_dd = metrics['equity_at_dd']
-    dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 VIOLATION"
-
-    st.metric(
-        label=f"Max DD % (${peak_equity_at_dd:,.0f} → ${equity_at_dd:,.0f})",
-        value=f"{metrics['max_dd_pct']:.2f}%",
-        delta=dd_status,
-        help=f"⚠️ Max Drawdown historique\n\nPeak: ${peak_equity_at_dd:,.0f}\nTrough: ${equity_at_dd:,.0f}\nPerte: ${metrics['max_dd_dollar']:,.0f}"
-    )
-
-with col2:
-    # Max DD $ dès le début
-    current_equity = metrics['equity']
-    recovery_pct = ((current_equity - equity_at_dd) / metrics['max_dd_dollar']) * 100 if metrics['max_dd_dollar'] > 0 else 0
-
-    st.metric(
-        label="Max DD ($)",
-        value=f"${metrics['max_dd_dollar']:,.2f}",
-        delta=f"Recovery: +{recovery_pct:.0f}%" if recovery_pct > 0 else "No recovery",
-        help=f"💰 Perte maximale historique\n\nPeak: ${peak_equity_at_dd:,.0f}\nTrough: ${equity_at_dd:,.0f}"
-    )
-
-with col3:
-    st.metric(
-        label="VaR 95%",
-        value=f"{metrics['var_95']:.2f}%",
-        delta="✅ OK" if metrics['var_95'] > -2.0 else "⚠️ Élevé",
-        help="Value at Risk - Perte max attendue dans 95% des cas"
-    )
-
-with col4:
-    st.metric(
-        label="CVaR 95%",
-        value=f"{metrics['cvar_95']:.2f}%",
-        delta="✅ OK" if metrics['cvar_95'] > -3.0 else "⚠️ Élevé",
-        help="Conditional VaR - Perte moyenne dans les pires 5% des cas"
-    )
-
-# === SECTION 3: RISK ===
-st.header("⚠️ Risk Management")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    # Sortino Ratio (downside risk)
-    sortino_value = metrics['sortino']
-    if sortino_value > 1.5:
-        sortino_delta = "✅ Excellent"
-    elif sortino_value > 1.0:
-        sortino_delta = "✅ Bon"
-    elif sortino_value > 0:
-        sortino_delta = "⚠️ Faible"
-    else:
-        sortino_delta = "❌ Négatif"
-
-    st.metric(
-        label="Sortino Ratio",
-        value=f"{sortino_value:.2f}",
-        delta=sortino_delta,
-        help="Risk-adjusted return focusing on downside volatility (better than Sharpe for asymmetric risk)"
-    )
-
-with col2:
-    # Calmar Ratio (return / max DD)
-    calmar_value = metrics['calmar']
-    if calmar_value > 1.0:
-        calmar_delta = "✅ Excellent"
-    elif calmar_value > 0.5:
-        calmar_delta = "✅ Bon"
-    elif calmar_value > 0:
-        calmar_delta = "⚠️ Faible"
-    else:
-        calmar_delta = "❌ Négatif"
-
-    st.metric(
-        label="Calmar Ratio",
-        value=f"{calmar_value:.2f}",
-        delta=calmar_delta,
-        help="Return / Max Drawdown - Measures return per unit of downside risk"
-    )
-
-with col3:
-    st.metric(
-        label="Avg Win",
-        value=f"${metrics['avg_win']:.2f}",
-        help="Gain moyen par trade gagnant"
-    )
-
-with col4:
-    st.metric(
-        label="Avg Loss",
-        value=f"${abs(metrics['avg_loss']):.2f}",
-        delta=f"Avg RR: {metrics['avg_rr']:.2f}R",
-        help="Perte moyenne par trade perdant"
-    )
-
-# === SECTION 3.5: MÉTRIQUES INSTITUTIONNELLES ===
-st.header("🏛️ Métriques Institutionnelles")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric(
-        label="Sortino Ratio",
-        value=f"{metrics['sortino']:.2f}",
-        delta="✅ Bon" if metrics['sortino'] > 1.5 else "⚠️ Faible"
-    )
-
-with col2:
-    st.metric(
-        label="Calmar Ratio",
-        value=f"{metrics['calmar']:.2f}",
-        delta="✅ Bon" if metrics['calmar'] > 1.0 else "⚠️ Faible"
-    )
-
-with col3:
-    st.metric(
-        label="VaR 95%",
-        value=f"{metrics['var_95']:.2f}%",
-        delta="✅ OK" if metrics['var_95'] > -2.0 else "⚠️ Élevé"
-    )
-
-with col4:
-    st.metric(
-        label="CVaR 95%",
-        value=f"{metrics['cvar_95']:.2f}%",
-        delta="✅ OK" if metrics['cvar_95'] > -3.0 else "⚠️ Élevé"
-    )
-
-# === SECTION 4: GRAPHIQUES ===
-st.header("📊 Graphiques")
-
-# Explication Balance vs Equity
-st.info("""
-📌 **Balance vs Equity - Explication:**
-- **Balance (Rose)** = Capital réalisé (positions fermées seulement)
-- **Equity (Vert)** = Balance + Unrealized PnL (positions ouvertes)
-- **Points rouges** = Checkpoints avec position ouverte
-- **Lignes superposées** = Pas de position ouverte à ce moment-là (normal!)
-
-⚠️ Votre agent ferme les positions rapidement, donc ~59% des checkpoints ont Balance = Equity.
-Les différences apparaissent sur les 41% de points avec positions flottantes (marqueurs rouges).
-""")
-
-# Ligne 1: Equity + Drawdown
-col1, col2 = st.columns(2)
-
-with col1:
-    st.plotly_chart(create_equity_curve(metrics['history']), use_container_width=True)
-
-with col2:
-    st.plotly_chart(create_drawdown_chart(metrics['history']), use_container_width=True)
-
-# Ligne 2: Sharpe + Distribution PnL
-col1, col2 = st.columns(2)
-
-with col1:
-    st.plotly_chart(create_sharpe_chart(metrics['history']), use_container_width=True)
-
-with col2:
-    st.plotly_chart(create_pnl_distribution(metrics['all_trades']), use_container_width=True)
-
-# === SECTION 5: TRADES DÉTAILS ===
-st.header("🎯 Top Trades")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("✅ Top 10 Meilleurs Trades")
-    # FIX 2025-11-12: PnL déjà en dollars - pas de division par 100
-    best_trades = sorted(metrics['all_trades'], key=lambda t: t.get('pnl', 0), reverse=True)[:10]
-
-    best_df = pd.DataFrame([
-        {
-            'Entry': f"${t.get('entry_price', 0):.2f}",
-            'Exit': f"${t.get('exit_price', 0):.2f}",
-            'Size': t.get('size', 0),
-            'PnL': f"${t.get('pnl', 0):.2f}"  # Déjà en dollars
-        }
-        for t in best_trades
-    ])
-    st.dataframe(best_df, use_container_width=True)
-
-with col2:
-    st.subheader("❌ Top 10 Pires Trades")
-    # FIX 2025-11-12: PnL déjà en dollars - pas de division par 100
-    worst_trades = sorted(metrics['all_trades'], key=lambda t: t.get('pnl', 0))[:10]
-
-    worst_df = pd.DataFrame([
-        {
-            'Entry': f"${t.get('entry_price', 0):.2f}",
-            'Exit': f"${t.get('exit_price', 0):.2f}",
-            'Size': t.get('size', 0),
-            'PnL': f"${t.get('pnl', 0):.2f}"  # Déjà en dollars
-        }
-        for t in worst_trades
-    ])
-    st.dataframe(worst_df, use_container_width=True)
-
-# === SECTION 6: STATISTIQUES DÉTAILLÉES COMPLÈTES (HEDGE FUND GRADE) ===
-with st.expander("📊 Statistiques Détaillées Complètes", expanded=True):
-    st.markdown("### 🎯 TRADING STATISTICS")
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.markdown("**📈 Trades Overview**")
-        st.markdown(f"- **Total Trades**: {metrics['total_trades']:,}")
-        st.markdown(f"- **✅ Gagnants**: {metrics['winning_trades']:,} ({metrics['win_rate']:.1f}%)")
-        st.markdown(f"- **❌ Perdants**: {metrics['losing_trades']:,} ({100-metrics['win_rate']:.1f}%)")
-        st.markdown(f"- **Win Rate**: {metrics['win_rate']:.1f}%")
-
-    with col2:
-        st.markdown("**💰 PnL Moyens**")
-        st.markdown(f"- **Avg Win**: ${metrics['avg_win']:.2f}")
-        st.markdown(f"- **Avg Loss**: $-{abs(metrics['avg_loss']):.2f}")
-        st.markdown(f"- **Avg RR**: {metrics['avg_rr']:.2f}R")
-        st.markdown(f"- **Expectancy**: ${metrics['expectancy']:.2f}/trade")
-
-    with col3:
-        st.markdown("**🎯 PnL Extremes**")
-        st.markdown(f"- **Max Gain**: ${metrics['max_win']:.2f}")
-        st.markdown(f"- **Max Perte**: ${metrics['max_loss']:.2f}")
-        st.markdown(f"- **Max RR**: {metrics['max_rr']:.2f}R")
-        st.markdown(f"- **Total PnL**: ${metrics['total_pnl']:.2f}")
-
-    with col4:
-        st.markdown("**🔥 Streaks (Séquences)**")
-        st.markdown(f"- **Max Win Streak**: {metrics['max_winning_streak']} trades")
-        st.markdown(f"- **Max Loss Streak**: {metrics['max_losing_streak']} trades")
-        st.markdown(f"- **Current Streak**: {metrics['current_streak']} ({metrics['current_streak_type']})")
-        st.markdown("")
-
-    st.markdown("---")
-    st.markdown("### 📊 RISK METRICS (INSTITUTIONAL GRADE)")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.markdown("**⚠️ Drawdown Metrics (Hedge Fund Grade)**")
-        st.markdown(f"- Max DD %: {metrics['max_dd_pct']:.2f}%")
-        st.markdown(f"- Max DD $: ${metrics['max_dd_dollar']:,.2f}")
-        st.markdown(f"- **Peak → Trough**: ${metrics['peak_equity_at_dd']:,.0f} → ${metrics['equity_at_dd']:,.0f}")
-        st.markdown(f"- **Timestep at DD**: {metrics['timestep_at_dd']:,}")
-        dd_status = "✅ FTMO OK" if metrics['max_dd_pct'] < 10 else "🚨 FTMO VIOLATION"
-        st.markdown(f"- **FTMO Status**: {dd_status}")
-        st.markdown(f"- **Recovery Factor**: {metrics['recovery_factor']:.2f}")
-
-    with col2:
-        st.markdown("**📈 Risk-Adjusted Returns**")
-        st.markdown(f"- **Sharpe Ratio**: {metrics['sharpe']:.2f}")
-        st.markdown(f"- **Sortino Ratio**: {metrics['sortino']:.2f}")
-        st.markdown(f"- **Calmar Ratio**: {metrics['calmar']:.2f}")
-        st.markdown(f"- **Profit Factor**: {metrics['profit_factor']:.2f}")
-
-    with col3:
-        st.markdown("**📉 Tail Risk (VaR)**")
-        st.markdown(f"- **VaR 95%**: {metrics['var_95']:.2f}%")
-        var_status = "✅ OK" if metrics['var_95'] > -2.0 else "⚠️ Élevé"
-        st.markdown(f"- **VaR Status**: {var_status}")
-        st.markdown(f"- **CVaR 95%**: {metrics['cvar_95']:.2f}%")
-        cvar_status = "✅ OK" if metrics['cvar_95'] > -3.0 else "⚠️ Élevé"
-        st.markdown(f"- **CVaR Status**: {cvar_status}")
-
-    with col4:
-        st.markdown("**💼 Performance Summary**")
-        st.markdown(f"- **ROI**: {metrics['roi']:.2f}%")
-        st.markdown(f"- **Total Profit**: ${metrics['total_pnl']:,.2f}")
-        st.markdown(f"- **Equity**: ${metrics['equity']:,.2f}")
-        st.markdown(f"- **Timesteps**: {metrics['timesteps']:,}")
-
-# === SECTION 7: FEATURES ANALYSIS (SHAP-BASED) ===
-st.header("🧠 Features Analysis - Agent 7 (PPO)")
-
-def get_feature_emoji(feature):
-    """Retourne emoji selon le type de feature"""
-    if any(x in feature.lower() for x in ['rl_', 'regret', 'trade_similarity']):
-        return "🤖"  # Features RL-specific
-    elif any(x in feature.lower() for x in ['cot', 'commitment']):
-        return "📊"
-    elif any(x in feature.lower() for x in ['macro', 'us_', 'fomc', 'cpi', 'nfp', 'score']):
-        return "🏛️"
-    elif any(x in feature.lower() for x in ['seasonal', 'seasonax', 'month', 'week']):
-        return "📅"
-    elif any(x in feature.lower() for x in ['corr', 'eurusd', 'usdjpy', 'dxy', 'audchf', 'usdchf']):
-        return "🔗"
-    elif any(x in feature.lower() for x in ['rsi', 'macd', 'adx', 'stoch', 'bb_', 'tsi', 'momentum']):
-        return "📈"
-    elif any(x in feature.lower() for x in ['volume', 'vol_', 'va_']):
-        return "📊"
-    elif any(x in feature.lower() for x in ['retail', 'long_pct', 'short_pct']):
-        return "👥"
-    else:
-        return "🔹"
-
-# Charger l'importance des features (LIVE si possible, sinon fallback STATIC)
-features_list, is_live, analysis_timestamp, error_msg, importance_scores = load_model_feature_importance()
-
-# Fallback si échec total
-if features_list is None:
-    features_list = load_top_features()
-    is_live = False
-
-top_features = features_list
-
-if top_features:
-    # Indicateur LIVE vs STATIC
-    if is_live:
-        st.success(f"🔴 **LIVE**: {len(top_features)} features classées par importance RÉELLE du modèle actuel (TOUTES les features analysées)")
-        st.info(f"⏰ **Analysé**: {analysis_timestamp.strftime('%Y-%m-%d %H:%M:%S')} | 🤖 **Modèle**: best_model.zip")
-        st.info("**📊 Méthode**: Analyse des poids de la première couche du policy network (PPO) - Les features avec les poids moyens les plus élevés (en valeur absolue) ont le PLUS d'impact sur les décisions de l'agent.")
-    else:
-        st.warning(f"📁 **STATIC**: {len(top_features)} features depuis classement SHAP pré-entraînement")
-        if error_msg:
-            st.info(f"ℹ️ **Raison**: {error_msg}")
-        st.info("**📌 Note**: Classement théorique basé sur SHAP (top 100 seulement) - Pour voir l'importance RÉELLE de TOUTES les features du modèle en cours, assurez-vous que stable-baselines3 est installé et que best_model.zip existe.")
-
-    # TOP 50 BEST FEATURES (les plus importantes)
-    st.markdown("---")
-    st.subheader("🏆 TOP 50 BEST FEATURES (Plus d'Impact)")
-
-    # 5 colonnes de 10 features chacune
+    # Métriques clés
     col1, col2, col3, col4, col5 = st.columns(5)
 
-    # Colonne 1: #1-10
+    latest = df.iloc[-1]
     with col1:
-        for i, feature in enumerate(top_features[:10], 1):
-            emoji = get_feature_emoji(feature)
-            if is_live and importance_scores:
-                score = importance_scores.get(feature, 0)
-                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-            else:
-                st.markdown(f"**#{i}** {emoji} `{feature}`")
-
-    # Colonne 2: #11-20
+        st.metric("🎯 ROI Final", f"{latest['roi_pct']:.2f}%")
     with col2:
-        for i, feature in enumerate(top_features[10:20], 11):
-            emoji = get_feature_emoji(feature)
-            if is_live and importance_scores:
-                score = importance_scores.get(feature, 0)
-                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-            else:
-                st.markdown(f"**#{i}** {emoji} `{feature}`")
-
-    # Colonne 3: #21-30
+        st.metric("💎 Sharpe Ratio", f"{latest['sharpe']:.2f}")
     with col3:
-        for i, feature in enumerate(top_features[20:30], 21):
-            emoji = get_feature_emoji(feature)
-            if is_live and importance_scores:
-                score = importance_scores.get(feature, 0)
-                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-            else:
-                st.markdown(f"**#{i}** {emoji} `{feature}`")
-
-    # Colonne 4: #31-40
+        st.metric("📉 Max DD", f"{latest['max_dd_pct']:.2f}%")
     with col4:
-        for i, feature in enumerate(top_features[30:40], 31):
-            emoji = get_feature_emoji(feature)
-            if is_live and importance_scores:
-                score = importance_scores.get(feature, 0)
-                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-            else:
-                st.markdown(f"**#{i}** {emoji} `{feature}`")
-
-    # Colonne 5: #41-50
+        if 'win_rate' in df.columns:
+            st.metric("🎲 Win Rate", f"{latest['win_rate']:.1f}%")
     with col5:
-        for i, feature in enumerate(top_features[40:50], 41):
-            emoji = get_feature_emoji(feature)
-            if is_live and importance_scores:
-                score = importance_scores.get(feature, 0)
-                st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-            else:
-                st.markdown(f"**#{i}** {emoji} `{feature}`")
+        st.metric("📊 Total Trades", f"{int(latest['total_trades'])}")
 
-    # TOP 50 WORST FEATURES (les moins importantes)
-    st.markdown("---")
-    st.subheader("⚠️ TOP 50 WORST FEATURES (Moins d'Impact)")
 
-    if len(top_features) >= 50:
-        # 5 colonnes de 10 features chacune
-        col1, col2, col3, col4, col5 = st.columns(5)
+def plot_trades_analysis(df: pd.DataFrame, title: str = "Trades Analysis"):
+    """Visualisation pour trades CSV"""
 
-        worst_features = top_features[-50:]
-        start_idx = len(top_features) - 50 + 1  # Index de départ pour énumération
+    st.subheader(f"📊 {title}")
 
-        # Colonne 1: derniers 50-41
+    # Conversion des timestamps
+    if 'entry_time' in df.columns:
+        df['entry_time'] = pd.to_datetime(df['entry_time'])
+        df['exit_time'] = pd.to_datetime(df['exit_time'])
+
+    # Statistiques globales
+    total_pnl = df['pnl'].sum()
+    avg_pnl = df['pnl'].mean()
+    win_trades = len(df[df['pnl'] > 0])
+    loss_trades = len(df[df['pnl'] < 0])
+    win_rate = (win_trades / len(df) * 100) if len(df) > 0 else 0
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("💰 Total PnL", f"${total_pnl:,.2f}")
+    with col2:
+        st.metric("📊 Avg PnL/Trade", f"${avg_pnl:.2f}")
+    with col3:
+        st.metric("✅ Win Rate", f"{win_rate:.1f}%")
+    with col4:
+        st.metric("📈 Total Trades", f"{len(df)}")
+
+    # Graphiques
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            "📈 Cumulative PnL", "📊 PnL Distribution",
+            "⏱️ Trade Duration (bars)", "💹 Long vs Short Performance"
+        ),
+        vertical_spacing=0.15,
+        horizontal_spacing=0.1
+    )
+
+    # 1. Cumulative PnL
+    df['cumulative_pnl'] = df['pnl'].cumsum()
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['cumulative_pnl'],
+        name='Cumulative PnL', line=dict(color='#00d4ff', width=2),
+        fill='tozeroy', fillcolor='rgba(0, 212, 255, 0.1)'
+    ), row=1, col=1)
+
+    # 2. PnL Distribution
+    fig.add_trace(go.Histogram(
+        x=df['pnl'], nbinsx=50,
+        name='PnL Distribution',
+        marker=dict(color='#00ff88', line=dict(color='white', width=1))
+    ), row=1, col=2)
+
+    # 3. Trade Duration
+    if 'duration_bars' in df.columns:
+        fig.add_trace(go.Histogram(
+            x=df['duration_bars'], nbinsx=30,
+            name='Duration (bars)',
+            marker=dict(color='#ff00ff', line=dict(color='white', width=1))
+        ), row=2, col=1)
+
+    # 4. Long vs Short
+    if 'side' in df.columns or 'direction' in df.columns:
+        side_col = 'side' if 'side' in df.columns else 'direction'
+        long_pnl = df[df[side_col].isin([1, 'long'])]['pnl'].sum()
+        short_pnl = df[df[side_col].isin([-1, 'short'])]['pnl'].sum()
+
+        fig.add_trace(go.Bar(
+            x=['Long', 'Short'],
+            y=[long_pnl, short_pnl],
+            marker=dict(color=['#00ff88', '#ff0044']),
+            name='PnL by Direction'
+        ), row=2, col=2)
+
+    fig.update_layout(
+        height=800,
+        showlegend=False,
+        template='plotly_dark'
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Top 10 meilleurs/pires trades
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("### 🏆 Top 10 Best Trades")
+        best_trades = df.nlargest(10, 'pnl')[['entry_price', 'exit_price', 'pnl', 'pnl_pct']]
+        st.dataframe(best_trades.style.format({
+            'entry_price': '{:.2f}',
+            'exit_price': '{:.2f}',
+            'pnl': '${:.2f}',
+            'pnl_pct': '{:.2%}'
+        }), use_container_width=True)
+
+    with col2:
+        st.markdown("### 💀 Top 10 Worst Trades")
+        worst_trades = df.nsmallest(10, 'pnl')[['entry_price', 'exit_price', 'pnl', 'pnl_pct']]
+        st.dataframe(worst_trades.style.format({
+            'entry_price': '{:.2f}',
+            'exit_price': '{:.2f}',
+            'pnl': '${:.2f}',
+            'pnl_pct': '{:.2%}'
+        }), use_container_width=True)
+
+
+def plot_checkpoints_analysis(df: pd.DataFrame, title: str = "Checkpoints Analysis"):
+    """Visualisation pour checkpoints_analysis.csv"""
+
+    st.subheader(f"🔍 {title}")
+
+    # Tri par steps
+    df = df.sort_values('steps')
+
+    # Graphique principal
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            "📊 Composite Score Evolution", "💰 ROI % by Checkpoint",
+            "💎 Sharpe Ratio", "📉 Max Drawdown %"
+        ),
+        vertical_spacing=0.15
+    )
+
+    # 1. Composite Score
+    fig.add_trace(go.Scatter(
+        x=df['steps'], y=df['composite_score'],
+        name='Composite Score',
+        line=dict(color='#00d4ff', width=3),
+        mode='lines+markers'
+    ), row=1, col=1)
+
+    # 2. ROI
+    colors = ['#00ff88' if x > 0 else '#ff0044' for x in df['roi_pct']]
+    fig.add_trace(go.Bar(
+        x=df['steps'], y=df['roi_pct'],
+        name='ROI %',
+        marker=dict(color=colors)
+    ), row=1, col=2)
+
+    # 3. Sharpe
+    fig.add_trace(go.Scatter(
+        x=df['steps'], y=df['sharpe'],
+        name='Sharpe',
+        line=dict(color='#ff00ff', width=2),
+        mode='lines+markers'
+    ), row=2, col=1)
+
+    # 4. Max DD
+    fig.add_trace(go.Scatter(
+        x=df['steps'], y=df['max_dd_pct'],
+        name='Max DD %',
+        line=dict(color='#ff0044', width=2),
+        fill='tozeroy',
+        fillcolor='rgba(255, 0, 68, 0.1)'
+    ), row=2, col=2)
+    fig.add_hline(y=10, line_dash="dash", line_color="red",
+                  annotation_text="FTMO 10%", row=2, col=2)
+
+    fig.update_layout(
+        height=700,
+        showlegend=False,
+        template='plotly_dark'
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Meilleurs checkpoints
+    st.markdown("### 🏆 Top 5 Checkpoints (by Composite Score)")
+    best_checkpoints = df.nlargest(5, 'composite_score')[
+        ['steps', 'file', 'roi_pct', 'sharpe', 'max_dd_pct', 'composite_score']
+    ]
+    st.dataframe(best_checkpoints.style.format({
+        'roi_pct': '{:.2f}%',
+        'sharpe': '{:.2f}',
+        'max_dd_pct': '{:.2f}%',
+        'composite_score': '{:.4f}'
+    }), use_container_width=True)
+
+
+def plot_quick_metrics(df: pd.DataFrame, title: str = "Quick Metrics"):
+    """Visualisation pour metrics simples"""
+
+    st.subheader(f"⚡ {title}")
+
+    # Métriques
+    col1, col2, col3 = st.columns(3)
+
+    latest = df.iloc[-1] if len(df) > 0 else None
+
+    if latest is not None:
         with col1:
-            for i, feature in enumerate(worst_features[:10], start_idx):
-                emoji = get_feature_emoji(feature)
-                if is_live and importance_scores:
-                    score = importance_scores.get(feature, 0)
-                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-                else:
-                    st.markdown(f"**#{i}** {emoji} `{feature}`")
-
-        # Colonne 2: derniers 40-31
+            st.metric("🎯 ROI", f"{latest['roi_pct']:.2f}%")
         with col2:
-            for i, feature in enumerate(worst_features[10:20], start_idx+10):
-                emoji = get_feature_emoji(feature)
-                if is_live and importance_scores:
-                    score = importance_scores.get(feature, 0)
-                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-                else:
-                    st.markdown(f"**#{i}** {emoji} `{feature}`")
-
-        # Colonne 3: derniers 30-21
+            st.metric("💰 Equity", f"${latest['equity']:,.2f}")
         with col3:
-            for i, feature in enumerate(worst_features[20:30], start_idx+20):
-                emoji = get_feature_emoji(feature)
-                if is_live and importance_scores:
-                    score = importance_scores.get(feature, 0)
-                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-                else:
-                    st.markdown(f"**#{i}** {emoji} `{feature}`")
+            st.metric("📊 Trades", f"{int(latest['total_trades'])}")
 
-        # Colonne 4: derniers 20-11
-        with col4:
-            for i, feature in enumerate(worst_features[30:40], start_idx+30):
-                emoji = get_feature_emoji(feature)
-                if is_live and importance_scores:
-                    score = importance_scores.get(feature, 0)
-                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-                else:
-                    st.markdown(f"**#{i}** {emoji} `{feature}`")
+    # Graphique simple
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df['timesteps'], y=df['equity'],
+        name='Equity',
+        line=dict(color='#00d4ff', width=3),
+        fill='tozeroy',
+        fillcolor='rgba(0, 212, 255, 0.2)'
+    ))
 
-        # Colonne 5: derniers 10-1 (les PIRES)
-        with col5:
-            for i, feature in enumerate(worst_features[40:50], start_idx+40):
-                emoji = get_feature_emoji(feature)
-                if is_live and importance_scores:
-                    score = importance_scores.get(feature, 0)
-                    st.markdown(f"**#{i}** {emoji} `{feature}` - **{score:.1f}**")
-                else:
-                    st.markdown(f"**#{i}** {emoji} `{feature}`")
-    else:
-        st.warning(f"Pas assez de features pour afficher le TOP 50 WORST (seulement {len(top_features)} features disponibles)")
+    fig.update_layout(
+        title="Equity Curve",
+        height=400,
+        template='plotly_dark'
+    )
 
-    # FEATURES INUTILISÉES (score < 5.0 en mode LIVE)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def plot_backtest_comparison(df: pd.DataFrame, title: str = "Backtest Results"):
+    """Visualisation pour backtest multi-agents"""
+
+    st.subheader(f"🏆 {title}")
+
+    # Radar chart pour comparaison
+    if 'agent' in df.columns:
+        categories = ['ROI', 'Sharpe', 'Win Rate', 'Profit Factor']
+
+        fig = go.Figure()
+
+        for _, row in df.iterrows():
+            agent_name = row['agent']
+            values = [
+                row.get('roi', 0),
+                row.get('sharpe_ratio', 0) * 10,  # Mise à l'échelle
+                row.get('win_rate', 0),
+                row.get('profit_factor', 0) * 10
+            ]
+
+            fig.add_trace(go.Scatterpolar(
+                r=values,
+                theta=categories,
+                fill='toself',
+                name=agent_name
+            ))
+
+        fig.update_layout(
+            polar=dict(radialaxis=dict(visible=True)),
+            showlegend=True,
+            height=500,
+            template='plotly_dark'
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Tableau de comparaison
+    st.dataframe(df, use_container_width=True)
+
+
+# ============================================================================
+# INTERFACE PRINCIPALE
+# ============================================================================
+
+def main():
+    """Application principale"""
+
+    # Header
+    st.title("🏛️ INSTITUTIONAL RL TRADING DASHBOARD")
+    st.markdown("### 📊 Universal CSV Support - Auto-Detection")
     st.markdown("---")
-    if is_live and importance_scores:
-        # Filtrer les features avec score très faible (< 5.0)
-        UNUSED_THRESHOLD = 5.0
-        unused_features = [(f, importance_scores.get(f, 0)) for f in top_features if importance_scores.get(f, 0) < UNUSED_THRESHOLD]
 
-        if unused_features:
-            st.subheader(f"🚫 FEATURES INUTILISÉES (Score < {UNUSED_THRESHOLD:.1f}) - {len(unused_features)} trouvées")
-            st.warning(f"⚠️ Ces features ont un impact quasi-nul sur les décisions de l'agent. Elles pourraient être retirées pour simplifier le modèle.")
+    # ========================================================================
+    # SIDEBAR - Options de chargement
+    # ========================================================================
 
-            # Afficher en 4 colonnes
-            num_cols = 4
-            cols = st.columns(num_cols)
+    st.sidebar.title("⚙️ Data Source")
 
-            for idx, (feature, score) in enumerate(unused_features):
-                col_idx = idx % num_cols
-                with cols[col_idx]:
-                    emoji = get_feature_emoji(feature)
-                    # Trouver le rang global
-                    rank = top_features.index(feature) + 1
-                    st.markdown(f"**#{rank}** {emoji} `{feature}` - **{score:.2f}**")
-        else:
-            st.success(f"✅ Aucune feature inutilisée (toutes ont un score ≥ {UNUSED_THRESHOLD:.1f})")
+    data_source = st.sidebar.radio(
+        "Select data source:",
+        ["📁 Auto-detect from folder", "📤 Upload CSV files", "🔗 Load from GitHub repo"]
+    )
+
+    csv_data = None
+
+    # Option 1: Auto-détection depuis un dossier
+    if data_source == "📁 Auto-detect from folder":
+        st.sidebar.markdown("---")
+
+        default_path = r"C:\Users\lbye3\Desktop\GoldRL\AGENT"
+        folder_path = st.sidebar.text_input(
+            "Folder path:",
+            value=default_path,
+            help="Chemin du dossier contenant les CSV (recherche récursive)"
+        )
+
+        if st.sidebar.button("🔍 Scan Folder", type="primary"):
+            with st.spinner("Scanning for CSV files..."):
+                csv_data = load_all_csvs(folder_path)
+
+                # Compteur de fichiers trouvés
+                total_csvs = sum(len(files) for files in csv_data.values())
+                st.sidebar.success(f"✅ {total_csvs} CSV files found!")
+
+                # Détails par type
+                for csv_type, files in csv_data.items():
+                    if len(files) > 0:
+                        st.sidebar.info(f"**{csv_type.upper()}**: {len(files)} files")
+
+    # Option 2: Upload manuel
+    elif data_source == "📤 Upload CSV files":
+        st.sidebar.markdown("---")
+
+        uploaded_files = st.sidebar.file_uploader(
+            "Upload CSV files:",
+            type=['csv'],
+            accept_multiple_files=True,
+            help="Vous pouvez uploader plusieurs CSV à la fois"
+        )
+
+        if uploaded_files:
+            csv_data = {
+                'training_report': [],
+                'trades': [],
+                'checkpoints': [],
+                'metrics': [],
+                'backtest': [],
+                'features': [],
+                'tensorboard': [],
+                'unknown': []
+            }
+
+            for uploaded_file in uploaded_files:
+                csv_type, df = load_uploaded_csv(uploaded_file)
+                csv_data[csv_type].append((uploaded_file.name, df, None))
+
+            st.sidebar.success(f"✅ {len(uploaded_files)} files uploaded!")
+
+    # Option 3: Load depuis GitHub (futur)
     else:
-        st.info("ℹ️ **Mode LIVE requis** : Cette section nécessite l'analyse du modèle (best_model.zip). Disponible uniquement en local avec `streamlit run streamlit_dashboard.py`")
+        st.sidebar.info("🚧 GitHub integration coming soon...")
 
-    # TOUTES LES FEATURES (dans un expander)
-    st.markdown("---")
-    with st.expander(f"📋 TOUTES LES {len(top_features)} FEATURES (Cliquer pour développer)", expanded=False):
-        num_cols = 3
-        features_per_col = (len(top_features) + num_cols - 1) // num_cols
+    # ========================================================================
+    # AFFICHAGE DES DONNÉES
+    # ========================================================================
 
-        cols = st.columns(num_cols)
+    if csv_data:
 
-        for idx, feature in enumerate(top_features):
-            col_idx = idx // features_per_col
-            if col_idx < num_cols:
-                with cols[col_idx]:
-                    emoji = get_feature_emoji(feature)
-                    if is_live and importance_scores:
-                        score = importance_scores.get(feature, 0)
-                        st.markdown(f"**#{idx+1}** {emoji} `{feature}` - **{score:.1f}**")
+        # Tabs pour chaque type de CSV
+        tab_names = []
+        tab_contents = []
+
+        for csv_type, files in csv_data.items():
+            if len(files) > 0:
+                tab_names.append(f"{csv_type.upper()} ({len(files)})")
+                tab_contents.append((csv_type, files))
+
+        if len(tab_names) > 0:
+            tabs = st.tabs(tab_names)
+
+            for tab, (csv_type, files) in zip(tabs, tab_contents):
+                with tab:
+                    # Sélecteur de fichier si plusieurs
+                    if len(files) > 1:
+                        selected_file = st.selectbox(
+                            "Select file:",
+                            options=range(len(files)),
+                            format_func=lambda i: files[i][0]
+                        )
+                        filename, df, filepath = files[selected_file]
                     else:
-                        st.markdown(f"**#{idx+1}** {emoji} `{feature}`")
+                        filename, df, filepath = files[0]
 
-    # Légende des catégories
-    with st.expander("📖 Légende des Catégories"):
-        col1, col2, col3 = st.columns(3)
+                    st.markdown(f"**📄 File:** `{filename}`")
+                    if filepath:
+                        st.markdown(f"**📂 Path:** `{filepath}`")
 
-        with col1:
-            st.markdown("""
-            **🤖 Features RL-Specific (12)**
-            - Last actions (3)
-            - Regret signal
-            - Position duration
-            - Unrealized PnL ratio
-            - Market regime
-            - Time to macro event
-            - Volatility percentile
-            - Position side
-            - Recent win rate
-            - Trade similarity score
+                    st.markdown("---")
 
-            **📊 COT (Commitment of Traders)**
-            - Positions institutionnelles (Gold, DXY)
-            - Divergence comm/non-comm
-            - Z-score, percentiles
-            """)
+                    # Affichage selon le type
+                    if csv_type == 'training_report':
+                        plot_training_report(df, filename)
 
-        with col2:
-            st.markdown("""
-            **🏛️ Macro Events**
-            - FOMC, NFP, CPI, PPI
-            - Taux, inflation, emploi
-            - Scores économiques (emploi, inflation, taux, croissance)
+                    elif csv_type == 'trades':
+                        plot_trades_analysis(df, filename)
 
-            **📅 Seasonality**
-            - Strong/Best month (Seasonax)
-            - Weekly bias (bullish/bearish)
-            - Patterns saisonniers Gold
+                    elif csv_type == 'checkpoints':
+                        plot_checkpoints_analysis(df, filename)
 
-            **🔗 Correlations**
-            - EURUSD, USDJPY, USDCHF, AUDCHF
-            - DXY (Dollar Index)
-            - Gold vs devises/indices
-            """)
+                    elif csv_type == 'metrics':
+                        plot_quick_metrics(df, filename)
 
-        with col3:
-            st.markdown("""
-            **📈 Technical Indicators**
-            - RSI, MACD, ADX, Stochastic
-            - Bollinger Bands, ATR, TSI
-            - SMA, EMA (H1, M15, D1)
-            - Momentum, Divergences
+                    elif csv_type == 'backtest':
+                        plot_backtest_comparison(df, filename)
 
-            **👥 Retail Sentiment**
-            - Positions retail (DXY, Gold)
-            - Contrarian signal
-            """)
+                    elif csv_type == 'features':
+                        st.subheader("🎯 Feature Importance")
+                        fig = px.bar(
+                            df.nlargest(20, df.columns[1]),
+                            x=df.columns[1], y=df.columns[0],
+                            orientation='h',
+                            title="Top 20 Features"
+                        )
+                        fig.update_layout(template='plotly_dark')
+                        st.plotly_chart(fig, use_container_width=True)
 
-else:
-    st.error("❌ **Fichier features non trouvé**")
-    st.info("""
-    **Chemins recherchés**:
-    - `C:/Users/lbye3/Desktop/GoldRL/AGENT/AGENT 7/ENTRAINEMENT/top100_features_agent7.txt`
-    - `C:/Users/lbye3/Desktop/GoldRL/output/feature_selection/top100_features_agent7.txt`
+                    elif csv_type == 'tensorboard':
+                        st.subheader("📈 TensorBoard Metrics")
+                        fig = px.line(
+                            df, x=df.columns[0], y=df.columns[1],
+                            title=filename
+                        )
+                        fig.update_layout(template='plotly_dark')
+                        st.plotly_chart(fig, use_container_width=True)
 
-    **Action**: Créer le fichier avec la liste des features utilisées par l'agent.
-    """)
+                    else:  # unknown
+                        st.warning("⚠️ Type de CSV non reconnu - Affichage brut")
+                        st.dataframe(df, use_container_width=True)
 
-# Auto-refresh
-if auto_refresh:
-    time.sleep(refresh_interval)
-    st.rerun()
+                    # Option de téléchargement
+                    st.markdown("---")
+                    csv_export = df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="💾 Download CSV",
+                        data=csv_export,
+                        file_name=filename,
+                        mime='text/csv'
+                    )
+
+    else:
+        # Instructions si pas de données
+        st.info("""
+        ### 📖 Instructions
+
+        **Option 1 - Auto-Detection:**
+        1. Sélectionnez "Auto-detect from folder" dans la sidebar
+        2. Entrez le chemin du dossier contenant vos CSV
+        3. Cliquez sur "Scan Folder"
+
+        **Option 2 - Upload Manuel:**
+        1. Sélectionnez "Upload CSV files"
+        2. Uploadez un ou plusieurs CSV
+        3. Le dashboard les catégorise automatiquement
+
+        **Types de CSV supportés:**
+        - ✅ Training Reports (timesteps, roi, sharpe, equity...)
+        - ✅ Trades Details (entry, exit, pnl, duration...)
+        - ✅ Checkpoints Analysis (steps, composite score...)
+        - ✅ Quick Metrics (simple stats)
+        - ✅ Backtest Results (multi-agents comparison)
+        - ✅ Feature Importance (SHAP values)
+        - ✅ TensorBoard Exports (loss, rewards...)
+        """)
+
+    # ========================================================================
+    # FOOTER
+    # ========================================================================
+
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; color: #666;'>
+        <p>🏛️ Institutional RL Trading Dashboard v3.0 | Universal CSV Support</p>
+        <p>Built with Streamlit + Plotly | © 2025</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ============================================================================
+# LANCEMENT
+# ============================================================================
+
+if __name__ == "__main__":
+    main()
